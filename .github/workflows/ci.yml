@@ -19,3 +19,71 @@ jobs:
       - run: go build ./...
       - run: go vet ./...
       - run: go test -race ./...
+
+  # Lints each changed Markdown file outside .claude/ with the
+  # simple-english linter. One hit fails the job. The files under .claude/
+  # are the copied skill and output style, which quote bad examples.
+  writing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Lint changed Markdown files
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            range="$PR_BASE...$PR_HEAD"
+          elif [ -n "$PUSH_BEFORE" ] && [ "$PUSH_BEFORE" != 0000000000000000000000000000000000000000 ]; then
+            range="$PUSH_BEFORE..$PUSH_AFTER"
+          else
+            range="$PUSH_AFTER~1..$PUSH_AFTER"
+          fi
+          git -c core.quotePath=false diff --name-only --diff-filter=d "$range" -- '*.md' ':!.claude/**' > changed.txt
+          status=0
+          while IFS= read -r f; do
+            echo "lint: $f"
+            python3 tools/simple-english/ste_lint.py --type descriptive --gate "$f" || status=1
+          done < changed.txt
+          [ -s changed.txt ] || echo "no changed Markdown file"
+          exit $status
+
+  # Fails if a pull request of the App changes, adds or removes a
+  # requirement in any plan file, or breaks a plan file. For other
+  # authors it passes, because the operator changes requirements.
+  requirements:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Compare the requirements of base and head
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PUSH_AFTER: ${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            # The merge base, not the tip of main: a plan edit that the
+            # operator pushed to main after the branch point is not a change
+            # of this pull request.
+            base="$(git merge-base "$PR_BASE" "$PR_HEAD")" head="$PR_HEAD" author="$PR_AUTHOR"
+          else
+            base="$PUSH_BEFORE" head="$PUSH_AFTER" author="$ACTOR"
+            if [ -z "$base" ] || [ "$base" = 0000000000000000000000000000000000000000 ]; then
+              base="$PUSH_AFTER~1"
+            fi
+          fi
+          go run ./cmd/auto8-flow reqcheck -base "$base" -head "$head" -author "$author"
