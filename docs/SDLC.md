@@ -1,0 +1,122 @@
+# The auto8 development life cycle
+
+This document describes how a requirement for auto8 goes from an idea to merged code. It also says where the operator sees the state of each requirement. The plan `docs/plans/2026-11-20-1039-feat-requirements-workflow-plan.md` describes the tools for this process. Its requirement IDs (R1 to R28) own the rules, and this document names them in brackets. The section "What works today" at the end says which parts exist now.
+
+## Roles
+
+The operator is the owner of auto8 and the only person who decides what the build agent builds. The operator writes and refines the requirements, marks them ready, and approves every change that the process holds.
+
+The build agent is a Claude agent that a schedule starts in the cloud. A build is one run of the build agent on one plan. The build agent builds ready requirements, opens pull requests, and writes the summaries. It acts only on requirements that the operator marked ready.
+
+The sync step is a tool in this repository. It keeps one GitHub issue for each requirement in the plan files.
+
+The build agent and the sync step work under their own GitHub identity. That identity has access only to `kgbvax/auto8` and is not a code owner (R25).
+
+GitHub runs the CI jobs. Automatic merge means that GitHub merges a pull request by itself after all required jobs pass (R17). GitHub also holds each pull request that changes TX control code or a process file, until the operator approves it (R18, R19).
+
+Other GitHub users can read the repository and open issues, because the repository is public. The process never acts on their text (R12).
+
+## Where things live
+
+A requirement is a numbered statement in a plan file in `docs/plans`, for example `R3`. A plan file comes from the skills `ce-brainstorm` and `ce-plan` of the Compound Engineering (CE) plugin. It has the format `ce-unified-plan/v1`. The plan file is the only place where anyone writes or changes the text of a requirement (R1).
+
+An idea is a possible direction that is not a requirement yet. Ideas from `ce-ideate` stay in `docs/ideation` and get no issue.
+
+Each requirement has one GitHub issue. The issue title names the plan topic and the requirement ID, for example `decoder-v1 R3`. The issue body links to the requirement in the plan file and carries no requirement text of its own (R6). A label on the issue gives the state of the requirement.
+
+The GitHub project board of auto8 groups the issues by state (R9). The operator reads the state of each requirement there.
+
+## States
+
+A requirement is in exactly one state (R3). Each state is one issue label, except done and dropped. Whoever sets a state label removes the old one. If an issue carries two state labels, no build takes it, and the sync step reports it (R4).
+
+| State | Meaning | Set by |
+|---|---|---|
+| `proposed` | The requirement is in a plan file and can still change. | the sync step |
+| `ready` | The operator wants the build agent to build it. | the operator only (R26) |
+| `building` | The build agent works on it. | the build agent |
+| `blocked` | Work stopped for a reason that the issue names. | the build agent or the operator |
+| `needs-operator` | A pull request is open and waits for the approval of the operator. | the build agent |
+| done | The change is merged. The issue is closed as completed. | GitHub, at the merge of the pull request |
+| dropped | The requirement left the plan. The issue is closed as not planned. | the sync step |
+
+## The stages
+
+### 1. Collect ideas
+
+The operator runs `ce-ideate` to find and rank possible directions. The result is an ideation document in `docs/ideation`. Nothing goes to GitHub at this stage.
+
+### 2. Write the requirements
+
+The operator runs `ce-brainstorm` on one direction. The result is a plan file in `docs/plans` with numbered requirements. The operator then runs the sync step. The sync step opens one issue for each requirement, with the state `proposed` (R5).
+
+### 3. Refine
+
+The operator changes the plan file until the requirements are right. `ce-doc-review` and `ce-plan` help at this stage. After each change, the sync step updates the issues. If a requirement leaves the plan, the sync step closes its issue as not planned (R8).
+
+If someone changed an issue body on GitHub, the sync step does not overwrite it. It reports the issue, and the operator decides which text is right (R6).
+
+### 4. Mark ready
+
+The operator sets the label `ready` on each issue that the operator wants built. GitHub removes a label `ready` that any other identity sets (R26). The build agent works on no issue without this label.
+
+If the text of a `ready` requirement changes later, the sync step sets its issue back to `proposed` (R7). If the new text is right, the operator sets `ready` again.
+
+### 5. Build
+
+The schedule starts the build agent a few times a day. At most one build runs at a time (R10). The build agent does these steps:
+
+1. It takes the oldest issue with the label `ready`.
+2. It collects all ready requirements of the same plan into one build. It sets the label `building` on their issues.
+3. It reads the requirement text from the plan file on `main`, never from the issue (R12).
+4. It plans and codes the change with `ce-plan` and `ce-work`. It does not change the text of any requirement (R13).
+5. It runs `ce-code-review` and the simple-english linter, and fixes what they find (R14).
+6. It opens a pull request that names the issues it closes.
+
+If a build stops without a result, the next run sets the label `blocked` on its issues and names that reason (R11).
+
+### 6. Gates
+
+A gate is a condition that must be true before a pull request merges. GitHub enforces these gates as required jobs on `main` (R17):
+
+1. The job `test` passes. It runs `go build`, `go vet` and `go test -race`.
+2. The integration job passes. It runs auto8 against a simulated WSJT-X, a real MQTT broker in a container, and a simulated chase-queue (R15).
+3. The writing job passes. It lints each changed Markdown file with the simple-english linter (R16).
+
+Automatic merge stays off until the integration job and the writing job exist (R17). Nobody changes the branch protection or the permission for automatic merge before the operator agrees.
+
+### 7. Holds
+
+TX control is any code that can make WSJT-X or MSHV transmit. It is also the code that decides the time at which auto8 can ask for a transmission, such as the arm and presence logic. TX control code lives only in marked paths that the operator owns as code owner (R18).
+
+The process files are `.github/` (with the code owner file), `.claude/`, `tools/simple-english/`, `CLAUDE.md` and this document (R19).
+
+If a pull request changes TX control code or a process file, GitHub does not merge it before the operator approves it. The build agent also sets the label `needs-operator` on such a pull request.
+
+Another project is every repository other than `kgbvax/auto8`, for example opsotter (with chase-queue), horstreporter and StationA. A change to a vendored copy of their code counts as a change in that project. So does a change to the MQTT topics and payloads that they read. If a requirement needs such a change, the build agent writes no code there. It describes the change in the issue and sets the label `blocked` (R20). The operator makes the change in the other project and sets `ready` again.
+
+A build or a job can fail. If the build agent cannot fix the failure in the same build, it sets the label `blocked` and names the reason (R21).
+
+### 8. Close
+
+When a pull request merges, GitHub closes its issues. Each closed issue then gets one comment with a feature summary and an implementation summary (R22). The feature summary says what the operator can now do, in the words of the requirement. The implementation summary says what changed in the code and the tests. It links to the pull request and its commits.
+
+### 9. Deploy
+
+Nothing in this process deploys auto8. Before a deploy, the operator tests auto8 by hand with the real WSJT-X, MSHV or radio. The operator deploys only by hand, every time.
+
+## Writing rule
+
+All text that the process or an agent writes, in the repository and on GitHub, follows the simple-english skill (R23). This covers requirements, plans, documents, issue comments, pull request descriptions, commit messages, code comments, and every user interface text. Agents reply in the output style `simple-english`.
+
+The repository carries this style in `.claude/output-styles/simple-english.md`, the skill in `.claude/skills/simple-english/`, and the linter in `tools/simple-english/` (R24). In Claude Code, `.claude/settings.json` selects the style and lints each Markdown file that an agent writes. A contributor without Claude Code can read the same files for the rules and run the linter with `python3`.
+
+## What works today
+
+On 2026-11-20 these parts exist: the repository, the job `test`, this document, the plan for the process, and the writing rule with its style, skill and linter. These parts do not exist yet:
+
+1. The sync step, the labels and the project board.
+2. The GitHub identity of the agents, the code owner file and the branch protection.
+3. The integration job, the writing job, the schedule and the automatic merge.
+
+Until they exist, the operator starts each build by hand and merges each pull request by hand.
