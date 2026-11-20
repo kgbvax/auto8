@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/kgbvax/auto8/internal/flow"
@@ -26,6 +27,8 @@ commands:
   reap       set blocked on building issues without an open App pull request
   pick       set building on the ready issues of the next plan, print it as JSON
   mark       set blocked or needs-operator on building issues of one plan
+  holds      set needs-operator if an App pull request changes owned files
+  reqcheck   fail if an App pull request changes the requirements
 
 environment:
   AUTO8_TOKEN or GITHUB_TOKEN   GitHub token (never printed)
@@ -138,6 +141,51 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 			return errors.New("mark needs -plan and -ids")
 		}
 		return flow.Mark(ctx, c.client, c.app, *plan, strings.Split(*ids, ","), *state, *reason)
+	case "holds":
+		pr := fs.Int("pr", 0, "number of the pull request")
+		owners := fs.String("codeowners", ".github/CODEOWNERS", "CODEOWNERS file of the base branch, relative to -root")
+		c, err := setup(fs, rest)
+		if err != nil {
+			return err
+		}
+		if *pr == 0 {
+			return errors.New("holds needs -pr")
+		}
+		data, err := os.ReadFile(filepath.Join(c.root, *owners))
+		if err != nil {
+			return err
+		}
+		owned, err := flow.Holds(ctx, c.client, c.app, flow.ParseOwners(string(data)), *pr)
+		for _, f := range owned {
+			fmt.Fprintf(stderr, "owned file changed: %s\n", f)
+		}
+		return err
+	case "reqcheck":
+		base := fs.String("base", "", "git ref of the base")
+		head := fs.String("head", "HEAD", "git ref of the head")
+		author := fs.String("author", "", "login of the pull request author")
+		root := fs.String("root", ".", "root of the repository checkout")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		if *base == "" || *author == "" {
+			return errors.New("reqcheck needs -base and -author")
+		}
+		bfs, err := flow.GitFS(*root, *base, "docs/plans")
+		if err != nil {
+			return err
+		}
+		hfs, err := flow.GitFS(*root, *head, "docs/plans")
+		if err != nil {
+			return err
+		}
+		app := env("AUTO8_APP_LOGIN", "opsotter-auto8[bot]")
+		if diffs := flow.ReqCheck(bfs, hfs, "docs/plans", *author, app); len(diffs) > 0 {
+			fmt.Fprint(stderr, flow.FormatDiffs(diffs))
+			return fmt.Errorf("the pull request changes %d requirements, and only the operator can change requirements", len(diffs))
+		}
+		fmt.Fprintln(stderr, "reqcheck: the requirements did not change")
+		return nil
 	case "help", "-h", "--help":
 		fmt.Fprint(stderr, usage)
 		return nil
