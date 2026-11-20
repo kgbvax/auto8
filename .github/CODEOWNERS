@@ -1,0 +1,16 @@
+# The operator owns these paths as code owner.
+# A change to an owned path merges only after the operator approves it.
+
+# Process files: workflows, rulesets, agent setup, the writing linter,
+# the flow tool and the rules for the development process.
+/.github/ @kgbvax
+/.claude/ @kgbvax
+/tools/simple-english/ @kgbvax
+/cmd/auto8-flow/ @kgbvax
+/internal/flow/ @kgbvax
+/test/integration/peers/ @kgbvax
+/CLAUDE.md @kgbvax
+/docs/SDLC.md @kgbvax
+
+# TX control code: all code that can make WSJT-X or MSHV transmit.
+/internal/tx/ @kgbvax
