@@ -130,6 +130,11 @@ func TestLoadPlansOfThisRepository(t *testing.T) {
 		t.Fatalf("no unified plan found in docs/plans")
 	}
 	for _, p := range plans {
+		if p.Topic == "requirements-workflow" {
+			if n := len(p.Requirements); n != 32 {
+				t.Fatalf("the workflow plan has %d requirements, want R1 to R32", n)
+			}
+		}
 		if len(p.Requirements) == 0 {
 			t.Fatalf("plan %s has no requirements", p.Path)
 		}
