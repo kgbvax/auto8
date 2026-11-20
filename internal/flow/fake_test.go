@@ -225,6 +225,9 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 			if b, ok := in["body"].(string); ok {
 				is.Body = b
 			}
+			if t, ok := in["title"].(string); ok {
+				is.Title = t
+			}
 			if s, ok := in["state"].(string); ok {
 				is.State = s
 			}
@@ -330,7 +333,7 @@ func (f *fakeGitHub) serve(w http.ResponseWriter, r *http.Request) {
 		case parts[2] == "reviews":
 			var out []map[string]any
 			for _, rv := range p.Reviews {
-				out = append(out, map[string]any{"state": rv.State, "user": map[string]string{"login": rv.Author}})
+				out = append(out, map[string]any{"state": rv.State, "commit_id": rv.CommitID, "user": map[string]string{"login": rv.Author}})
 			}
 			f.json(w, page(r, out))
 		case parts[2] == "merge":

@@ -83,6 +83,42 @@ func CompareRequirements(base, head fs.FS, dir string) []string {
 	return out
 }
 
+// CompareBuild compares only the requirements of one build between main
+// and head. A change to another plan on main does not count. Problems in
+// the plan files of head count, as in CompareRequirements.
+func CompareBuild(main, head fs.FS, dir string, b BuildMarker) []string {
+	mp, _ := LoadPlans(main, dir)
+	hp, hreports := LoadPlans(head, dir)
+	var out []string
+	for _, r := range hreports {
+		out = append(out, "plan problem: "+r)
+	}
+	hashes := func(plans []Plan) map[string]string {
+		m := map[string]string{}
+		for _, p := range plans {
+			for _, r := range p.Requirements {
+				m[key(r.Plan, r.ID)] = r.Hash
+			}
+		}
+		return m
+	}
+	m, h := hashes(mp), hashes(hp)
+	for _, id := range b.IDs {
+		k := key(b.Plan, id)
+		mh, inM := m[k]
+		hh, inH := h[k]
+		switch {
+		case !inM:
+			out = append(out, b.Plan+" "+id+" is not on main")
+		case !inH:
+			out = append(out, b.Plan+" "+id+" is gone in the pull request")
+		case mh != hh:
+			out = append(out, b.Plan+" "+id+" has a changed text")
+		}
+	}
+	return out
+}
+
 // ReqCheck runs CompareRequirements for a pull request. It passes for an
 // author other than app, because the operator changes requirements.
 func ReqCheck(base, head fs.FS, dir, author, app string) []string {

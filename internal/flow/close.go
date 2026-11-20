@@ -34,12 +34,17 @@ func ParseSummaries(body string) []Summary {
 	return out
 }
 
-// Close finishes the issues of pull request n after it closed. If it
-// merged, each issue with a summary block gets the block as a comment and
-// closes as done. An issue of the build without a block also closes, with
-// a comment that names the gap. If the pull request closed without a
-// merge, the building issues of its build go to blocked.
-func Close(ctx context.Context, c *Client, app string, n int) error {
+// Close finishes the issues of pull request n after it closed.
+//
+// A merged pull request of app closes the issues of its build as done. An
+// issue with a summary block gets the block as a comment. An issue
+// without one gets a comment that names the gap. A summary block outside
+// the build, or for an issue that is not building or needs-operator,
+// changes nothing. A merged pull request of operator closes each issue
+// that has a summary block, so the operator can repair a missed close.
+// Summary blocks of other authors change nothing. If a pull request of
+// app closed without a merge, the issues of its build go to blocked.
+func Close(ctx context.Context, c *Client, app, operator string, n int) error {
 	pr, err := c.GetPull(ctx, n)
 	if err != nil {
 		return err
@@ -55,15 +60,31 @@ func Close(ctx context.Context, c *Client, app string, n int) error {
 	openIssue := func(plan, id string) (Issue, bool) {
 		return firstOpen(managed[key(plan, id)])
 	}
-	build, hasBuild := ParseBuildMarker(pr.Body)
+
+	if pr.Author == operator {
+		if !pr.Merged {
+			return nil
+		}
+		for _, s := range ParseSummaries(pr.Body) {
+			is, ok := openIssue(s.Plan, s.ID)
+			if !ok {
+				continue
+			}
+			if err := c.Finish(ctx, &is, Done, fmt.Sprintf("Done in pull request #%d.\n\n%s", n, s.Text)); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
 	if pr.Author != app {
-		hasBuild = false
+		return nil
+	}
+	build, ok := ParseBuildMarker(pr.Body)
+	if !ok {
+		return nil
 	}
 
 	if !pr.Merged {
-		if !hasBuild {
-			return nil
-		}
 		for _, id := range build.IDs {
 			is, ok := openIssue(build.Plan, id)
 			if !ok {
@@ -79,31 +100,26 @@ func Close(ctx context.Context, c *Client, app string, n int) error {
 		return nil
 	}
 
-	done := map[string]bool{}
+	summaries := map[string]Summary{}
 	for _, s := range ParseSummaries(pr.Body) {
-		is, ok := openIssue(s.Plan, s.ID)
+		if s.Plan == build.Plan {
+			summaries[s.ID] = s
+		}
+	}
+	for _, id := range build.IDs {
+		is, ok := openIssue(build.Plan, id)
 		if !ok {
 			continue
 		}
-		text := fmt.Sprintf("Done in pull request #%d.\n\n%s", n, s.Text)
+		if s, ok := StateOf(is); !ok || (s != Building && s != NeedsOperator) {
+			continue
+		}
+		text := fmt.Sprintf("Pull request #%d merged, but it has no summary block for %s. The feature summary and the implementation summary are missing.", n, id)
+		if s, ok := summaries[id]; ok {
+			text = fmt.Sprintf("Done in pull request #%d.\n\n%s", n, s.Text)
+		}
 		if err := c.Finish(ctx, &is, Done, text); err != nil {
 			return err
-		}
-		done[key(s.Plan, s.ID)] = true
-	}
-	if hasBuild {
-		for _, id := range build.IDs {
-			if done[key(build.Plan, id)] {
-				continue
-			}
-			is, ok := openIssue(build.Plan, id)
-			if !ok {
-				continue
-			}
-			text := fmt.Sprintf("Pull request #%d merged, but it has no summary block for %s. The feature summary and the implementation summary are missing.", n, id)
-			if err := c.Finish(ctx, &is, Done, text); err != nil {
-				return err
-			}
 		}
 	}
 	return nil

@@ -115,16 +115,16 @@ func Holds(ctx context.Context, c *Client, app string, owners Owners, n int) ([]
 	if err != nil {
 		return owned, err
 	}
+	list, missing := buildIssues(issues, b)
+	if len(missing) > 0 {
+		return owned, fmt.Errorf("pull request #%d names requirements without an open issue: %s", n, strings.Join(missing, ", "))
+	}
 	reason := fmt.Sprintf("Pull request #%d changes files that only the operator can release: %s. The operator must review and approve it.", n, strings.Join(owned, ", "))
-	for _, id := range b.IDs {
-		is, ok := issues[key(b.Plan, id)]
-		if !ok {
+	for _, is := range list {
+		if s, ok := StateOf(*is); !ok || s != Building {
 			continue
 		}
-		if s, ok := StateOf(is); !ok || s != Building {
-			continue
-		}
-		if err := c.SetState(ctx, &is, NeedsOperator, reason); err != nil {
+		if err := c.SetState(ctx, is, NeedsOperator, reason); err != nil {
 			return owned, err
 		}
 	}

@@ -136,7 +136,7 @@ func ParsePlan(p string, data []byte) (Plan, []string, bool) {
 
 // LoadPlans reads every unified plan file in dir of fsys. Two plans with
 // the same topic are both left out and reported, because their issues
-// would have the same titles.
+// have the same titles.
 func LoadPlans(fsys fs.FS, dir string) ([]Plan, []string) {
 	entries, err := fs.ReadDir(fsys, dir)
 	if err != nil {

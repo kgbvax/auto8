@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strings"
 )
 
 // key names one requirement across all plans.
@@ -84,7 +85,7 @@ func finalState(is Issue) (string, bool) {
 
 // Sync makes the issues match the plans. loadReports are the reports of
 // LoadPlans. If there are any, Sync changes nothing and returns an error,
-// because a plan that did not load would look like removed requirements.
+// because a plan that did not load looks like removed requirements.
 // app is the login of the GitHub App. log gets one line for each report.
 func Sync(ctx context.Context, c *Client, plans []Plan, loadReports []string, app string, log io.Writer) ([]string, error) {
 	if len(loadReports) > 0 {
@@ -105,7 +106,7 @@ func Sync(ctx context.Context, c *Client, plans []Plan, loadReports []string, ap
 		for _, r := range p.Requirements {
 			k := key(r.Plan, r.ID)
 			want[k] = true
-			if err := syncOne(ctx, c, rep, r, issues[k]); err != nil {
+			if err := syncOne(ctx, c, rep, app, r, issues[k]); err != nil {
 				return rep.Reports, err
 			}
 		}
@@ -124,7 +125,7 @@ func Sync(ctx context.Context, c *Client, plans []Plan, loadReports []string, ap
 				continue
 			}
 			m, _ := ParseMarker(is.Body)
-			if err := syncGone(ctx, c, rep, is, m); err != nil {
+			if err := syncGone(ctx, c, rep, app, is, m); err != nil {
 				return rep.Reports, err
 			}
 		}
@@ -148,7 +149,7 @@ func syncBoard(ctx context.Context, c *Client, is Issue) error {
 	return c.SetBoardState(ctx, is, s)
 }
 
-func syncOne(ctx context.Context, c *Client, rep *Reporter, r Requirement, list []Issue) error {
+func syncOne(ctx context.Context, c *Client, rep *Reporter, app string, r Requirement, list []Issue) error {
 	var open []Issue
 	var last *Issue
 	for i := range list {
@@ -181,9 +182,13 @@ func syncOne(ctx context.Context, c *Client, rep *Reporter, r Requirement, list 
 
 	is := open[0]
 	m, _ := ParseMarker(is.Body)
+	// The body counts as edited only if it differs from what the sync
+	// step wrote, with the topic that the title still names.
 	old := r
 	old.Hash = m.Hash
+	old.Topic = strings.TrimSuffix(is.Title, " "+r.ID)
 	edited := is.Body != IssueBody(old, c.Repo)
+	renamed := !edited && old.Topic != r.Topic
 	if edited {
 		if err := rep.Report(ctx, is.Number, "Someone changed the body of this issue. The sync step does not overwrite it. Put the body back as the sync step wrote it."); err != nil {
 			return err
@@ -201,7 +206,12 @@ func syncOne(ctx context.Context, c *Client, rep *Reporter, r Requirement, list 
 				return err
 			}
 		case Building, NeedsOperator:
-			if err := c.SetState(ctx, &is, Blocked, reason+" The open pull request does not build the new text."); err != nil {
+			if err := BlockAndRelease(ctx, c, app, r.Plan, []*Issue{&is}, reason+" The open pull request does not build the new text."); err != nil {
+				return err
+			}
+		}
+		if renamed {
+			if err := c.UpdateIssueTitle(ctx, is.Number, IssueTitle(r)); err != nil {
 				return err
 			}
 		}
@@ -212,10 +222,18 @@ func syncOne(ctx context.Context, c *Client, rep *Reporter, r Requirement, list 
 		}
 		return nil
 	}
+	if renamed {
+		if err := c.UpdateIssueTitle(ctx, is.Number, IssueTitle(r)); err != nil {
+			return err
+		}
+		if err := c.UpdateIssueBody(ctx, is.Number, IssueBody(r, c.Repo)); err != nil {
+			return err
+		}
+	}
 	return syncBoard(ctx, c, is)
 }
 
-func syncGone(ctx context.Context, c *Client, rep *Reporter, is Issue, m Marker) error {
+func syncGone(ctx context.Context, c *Client, rep *Reporter, app string, is Issue, m Marker) error {
 	state, ok := StateOf(is)
 	if !ok {
 		return rep.Report(ctx, is.Number, fmt.Sprintf("%s left its plan file, but this issue has %d state labels. The sync step does not change it.", m.ID, len(StatesOf(is))))
@@ -223,7 +241,7 @@ func syncGone(ctx context.Context, c *Client, rep *Reporter, is Issue, m Marker)
 	reason := fmt.Sprintf("%s is no longer in %s.", m.ID, m.Plan)
 	switch state {
 	case Building, NeedsOperator:
-		return c.SetState(ctx, &is, Blocked, reason+" A pull request for it is still open. The operator decides what happens to it.")
+		return BlockAndRelease(ctx, c, app, m.Plan, []*Issue{&is}, reason+" The operator decides what happens to it.")
 	default:
 		return c.Finish(ctx, &is, Dropped, reason)
 	}

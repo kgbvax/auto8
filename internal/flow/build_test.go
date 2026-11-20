@@ -146,3 +146,51 @@ func TestBuildMarkerRoundTrip(t *testing.T) {
 		t.Fatalf("marker = %+v %v", b, ok)
 	}
 }
+
+func TestMarkNeedsOperatorLeavesThePullOpen(t *testing.T) {
+	f := syncedIssues(t, testPlan("R1", "One."))
+	f.issue(1).Labels = []string{Building}
+	pr := f.addPull(appLogin, BuildMarkerText(examplePlan, []string{"R1"}), "sha1")
+	if err := Mark(context.Background(), f.client(), appLogin, examplePlan, []string{"R1"}, NeedsOperator, "The build changes TX control."); err != nil {
+		t.Fatal(err)
+	}
+	if f.issue(1).Labels[0] != NeedsOperator || pr.State != "open" {
+		t.Fatalf("labels = %v, pull = %s", f.issue(1).Labels, pr.State)
+	}
+}
+
+func TestMarkNeedsAReason(t *testing.T) {
+	f := syncedIssues(t, testPlan("R1", "One."))
+	f.issue(1).Labels = []string{Building}
+	before := f.writeCount()
+	if err := Mark(context.Background(), f.client(), appLogin, examplePlan, []string{"R1"}, Blocked, "  "); err == nil || f.writeCount() != before {
+		t.Fatalf("want an error and no writes, got %v", err)
+	}
+}
+
+func TestMarkBlockedLeavesThePullOfAnotherPlanOpen(t *testing.T) {
+	f := syncedIssues(t, twoPlans())
+	f.issue(1).Labels = []string{Building}
+	mine := f.addPull(appLogin, BuildMarkerText(examplePlan, []string{"R1"}), "sha1")
+	other := f.addPull(appLogin, BuildMarkerText("docs/plans/other.md", []string{"R1"}), "sha2")
+	if err := Mark(context.Background(), f.client(), appLogin, examplePlan, []string{"R1"}, Blocked, "The build needs chase-queue."); err != nil {
+		t.Fatal(err)
+	}
+	if mine.State != "closed" || other.State != "open" {
+		t.Fatalf("mine = %s, other = %s", mine.State, other.State)
+	}
+}
+
+func TestPickRefusesReadyLabelsAfterTheOperator(t *testing.T) {
+	plans := testPlan("R1", "One.", "R2", "Two.")
+	f := syncedIssues(t, plans)
+	makeReady(f, 1, operator)
+	f.issue(1).Labels = nil
+	f.label(1, "visitor", Ready)
+	f.issue(2).Labels = []string{Ready, Blocked}
+	f.label(2, operator, Ready)
+	f.issue(2).Labels = []string{Ready, Blocked}
+	if p, _ := PickNext(context.Background(), f.client(), plans, appLogin, operator); p != nil {
+		t.Fatalf("pick = %+v, want nothing", p)
+	}
+}

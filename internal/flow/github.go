@@ -128,8 +128,9 @@ type CheckRun struct {
 
 // Review is one review of a pull request.
 type Review struct {
-	Author string
-	State  string // APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED
+	Author   string
+	State    string // APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED
+	CommitID string // the commit that the review is for
 }
 
 // Comment is one issue comment.
@@ -283,6 +284,12 @@ func (c *Client) UpdateIssueBody(ctx context.Context, n int, body string) error 
 	return c.write(ctx, op, http.MethodPatch, c.repoURL("/issues/%d", n), map[string]any{"body": body}, nil)
 }
 
+// UpdateIssueTitle replaces the title of an issue.
+func (c *Client) UpdateIssueTitle(ctx context.Context, n int, title string) error {
+	op := map[string]any{"op": "update_title", "issue": n, "title": title}
+	return c.write(ctx, op, http.MethodPatch, c.repoURL("/issues/%d", n), map[string]any{"title": title}, nil)
+}
+
 // AddLabels adds labels to an issue.
 func (c *Client) AddLabels(ctx context.Context, n int, labels ...string) error {
 	op := map[string]any{"op": "add_labels", "issue": n, "labels": labels}
@@ -398,8 +405,9 @@ func (c *Client) PullFiles(ctx context.Context, n int) ([]string, error) {
 // Reviews returns the reviews of a pull request, oldest first.
 func (c *Client) Reviews(ctx context.Context, n int) ([]Review, error) {
 	type apiReview struct {
-		State string  `json:"state"`
-		User  apiUser `json:"user"`
+		State    string  `json:"state"`
+		User     apiUser `json:"user"`
+		CommitID string  `json:"commit_id"`
 	}
 	items, err := getAll[apiReview](ctx, c, c.repoURL("/pulls/%d/reviews", n))
 	if err != nil {
@@ -407,7 +415,7 @@ func (c *Client) Reviews(ctx context.Context, n int) ([]Review, error) {
 	}
 	var out []Review
 	for _, a := range items {
-		out = append(out, Review{Author: a.User.Login, State: a.State})
+		out = append(out, Review{Author: a.User.Login, State: a.State, CommitID: a.CommitID})
 	}
 	return out, nil
 }

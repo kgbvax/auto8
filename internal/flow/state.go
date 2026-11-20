@@ -77,14 +77,14 @@ func (c *Client) SetState(ctx context.Context, is *Issue, state, reason string) 
 	if !IsStateLabel(state) {
 		return fmt.Errorf("%s is not a state label", state)
 	}
-	if err := c.dropStateLabels(ctx, is, state); err != nil {
-		return err
-	}
 	if !is.HasLabel(state) {
 		if err := c.AddLabels(ctx, is.Number, state); err != nil {
 			return err
 		}
 		is.Labels = append(is.Labels, state)
+	}
+	if err := c.dropStateLabels(ctx, is, state); err != nil {
+		return err
 	}
 	if reason != "" {
 		if err := c.AddComment(ctx, is.Number, reason); err != nil {

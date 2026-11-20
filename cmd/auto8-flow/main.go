@@ -233,7 +233,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		if *pr == 0 {
 			return errors.New("close needs -pr")
 		}
-		return flow.Close(ctx, c.client, c.app, *pr)
+		return flow.Close(ctx, c.client, c.app, c.operator, *pr)
 	case "help", "-h", "--help":
 		fmt.Fprint(stderr, usage)
 		return nil

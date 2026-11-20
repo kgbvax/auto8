@@ -28,15 +28,23 @@ type MergeResult struct {
 }
 
 // lastOperatorReview returns the last APPROVED or CHANGES_REQUESTED
-// review state of operator, or an empty string.
-func lastOperatorReview(reviews []Review, operator string) string {
+// review state of operator. An approval counts only for the commit head,
+// so a push after the approval needs a new approval. A change request
+// counts for any commit.
+func lastOperatorReview(reviews []Review, operator, head string) string {
 	last := ""
 	for _, r := range reviews {
 		if r.Author != operator {
 			continue
 		}
 		switch r.State {
-		case "APPROVED", "CHANGES_REQUESTED":
+		case "APPROVED":
+			if r.CommitID == head {
+				last = r.State
+			} else {
+				last = ""
+			}
+		case "CHANGES_REQUESTED":
 			last = r.State
 		case "DISMISSED":
 			last = ""
@@ -45,11 +53,20 @@ func lastOperatorReview(reviews []Review, operator string) string {
 	return last
 }
 
-// Merge merges an App pull request if all of these are true: every
-// required job passed, no issue of the build is blocked, needs-operator
-// is released by an approval of the operator, and the requirements of
-// the head match the current main. A failed job, a change request of
-// the operator, or a changed requirement sets the issues to blocked.
+// failedConclusions are the check run results that block the issues.
+// Other results that are not success, such as skipped or neutral, only
+// stop the merge.
+var failedConclusions = map[string]bool{
+	"failure": true, "timed_out": true, "cancelled": true, "action_required": true, "startup_failure": true,
+}
+
+// Merge merges an App pull request if all of these are true: each
+// requirement of the build has an open issue, every required job passed,
+// no issue of the build is blocked, an approval of the operator on the
+// head commit released each needs-operator issue, and the requirements of
+// the build on the head match the current main. A failed job, a change
+// request of the operator, or a changed requirement of the build sets the
+// issues to blocked.
 func Merge(ctx context.Context, c *Client, in MergeInput) (MergeResult, error) {
 	pr, err := c.GetPull(ctx, in.Pull)
 	if err != nil {
@@ -61,6 +78,9 @@ func Merge(ctx context.Context, c *Client, in MergeInput) (MergeResult, error) {
 	if pr.State != "open" {
 		return MergeResult{Reason: "the pull request is not open"}, nil
 	}
+	if pr.BaseRef != "main" {
+		return MergeResult{Reason: "the pull request does not target main"}, nil
+	}
 	build, ok := ParseBuildMarker(pr.Body)
 	if !ok {
 		return MergeResult{Reason: "the pull request has no build marker"}, nil
@@ -69,12 +89,9 @@ func Merge(ctx context.Context, c *Client, in MergeInput) (MergeResult, error) {
 	if err != nil {
 		return MergeResult{}, err
 	}
-	var list []*Issue
-	for _, id := range build.IDs {
-		if is, ok := issues[key(build.Plan, id)]; ok {
-			is := is
-			list = append(list, &is)
-		}
+	list, missing := buildIssues(issues, build)
+	if len(missing) > 0 {
+		return MergeResult{Reason: "no open issue for " + strings.Join(missing, ", ")}, nil
 	}
 	block := func(reason string) (MergeResult, error) {
 		return MergeResult{Reason: reason}, BlockAndRelease(ctx, c, in.App, build.Plan, list, reason)
@@ -84,7 +101,7 @@ func Merge(ctx context.Context, c *Client, in MergeInput) (MergeResult, error) {
 	if err != nil {
 		return MergeResult{}, err
 	}
-	review := lastOperatorReview(reviews, in.Operator)
+	review := lastOperatorReview(reviews, in.Operator, pr.HeadSHA)
 	if review == "CHANGES_REQUESTED" {
 		return block(fmt.Sprintf("The operator asked for changes on pull request #%d.", in.Pull))
 	}
@@ -97,25 +114,29 @@ func Merge(ctx context.Context, c *Client, in MergeInput) (MergeResult, error) {
 	for _, r := range runs {
 		byName[r.Name] = r
 	}
-	var waiting []string
+	var waiting, notPassed []string
 	for _, name := range in.Required {
 		r, ok := byName[name]
-		if !ok || r.Status != "completed" {
+		switch {
+		case !ok || r.Status != "completed":
 			waiting = append(waiting, name)
-			continue
-		}
-		if r.Conclusion != "success" {
+		case failedConclusions[r.Conclusion]:
 			return block(fmt.Sprintf("The required job %s failed on pull request #%d.", name, in.Pull))
+		case r.Conclusion != "success":
+			notPassed = append(notPassed, name+" ("+r.Conclusion+")")
 		}
 	}
 
 	if in.Main != nil && in.Head != nil {
-		if diffs := CompareRequirements(in.Main, in.Head, PlansDir); len(diffs) > 0 {
+		if diffs := CompareBuild(in.Main, in.Head, PlansDir, build); len(diffs) > 0 {
 			return block(fmt.Sprintf("The requirements on main changed while pull request #%d was open: %s.", in.Pull, strings.Join(diffs, ", ")))
 		}
 	}
 	if len(waiting) > 0 {
 		return MergeResult{Reason: "waiting for the jobs " + strings.Join(waiting, ", ")}, nil
+	}
+	if len(notPassed) > 0 {
+		return MergeResult{Reason: "required jobs did not pass: " + strings.Join(notPassed, ", ")}, nil
 	}
 
 	for _, is := range list {

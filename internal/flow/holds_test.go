@@ -5,6 +5,7 @@ package flow
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -81,5 +82,22 @@ func TestHoldsLeavesOtherChangesAlone(t *testing.T) {
 	}
 	if got := f.issue(1).Labels; got[0] != Building {
 		t.Fatalf("labels = %v", got)
+	}
+}
+
+func TestHoldsIgnoresAnotherAuthor(t *testing.T) {
+	f, _ := holdsSetup(t)
+	pr := f.addPull("visitor", BuildMarkerText("docs/plans/example.md", []string{"R1"}), "sha2", "internal/tx/x.go")
+	owned, err := Holds(context.Background(), f.client(), appLogin, ParseOwners("/internal/tx/ @kgbvax\n"), pr.Number)
+	if err != nil || owned != nil || f.issue(1).Labels[0] != Building {
+		t.Fatalf("holds = %v, %v, labels = %v", owned, err, f.issue(1).Labels)
+	}
+}
+
+func TestHoldsFailsForARequirementWithoutAnIssue(t *testing.T) {
+	f, _ := holdsSetup(t)
+	pr := f.addPull(appLogin, BuildMarkerText("docs/plans/example.md", []string{"R1", "R9"}), "sha2", "internal/tx/x.go")
+	if _, err := Holds(context.Background(), f.client(), appLogin, ParseOwners("/internal/tx/ @kgbvax\n"), pr.Number); err == nil || !strings.Contains(err.Error(), "R9") {
+		t.Fatalf("want an error that names R9, got %v", err)
 	}
 }

@@ -73,6 +73,23 @@ func openManaged(ctx context.Context, c *Client, app string) (map[string]Issue, 
 	return out, nil
 }
 
+// buildIssues returns the open issue of each requirement of the build, in
+// marker order. missing names each requirement without an open issue.
+func buildIssues(issues map[string]Issue, b BuildMarker) (found []*Issue, missing []string) {
+	if len(b.IDs) == 0 {
+		return nil, []string{b.Plan}
+	}
+	for _, id := range b.IDs {
+		is, ok := issues[key(b.Plan, id)]
+		if !ok {
+			missing = append(missing, b.Plan+" "+id)
+			continue
+		}
+		found = append(found, &is)
+	}
+	return found, missing
+}
+
 // Reap sets blocked on each building issue that no open pull request of
 // app covers. It returns the numbers of the issues that it changed.
 func Reap(ctx context.Context, c *Client, app string) ([]int, error) {

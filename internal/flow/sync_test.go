@@ -190,3 +190,29 @@ func TestSyncDryRunOnThisRepository(t *testing.T) {
 		t.Fatalf("dry run wrote")
 	}
 }
+
+func TestSyncReleasesThePlanOfAChangedBuildingRequirement(t *testing.T) {
+	f := newFake(t)
+	seed(t, f, testPlan("R1", "One."), Building)
+	pr := f.addPull(appLogin, BuildMarkerText(examplePlan, []string{"R1"}), "sha1")
+	runSync(t, f, testPlan("R1", "One, changed."))
+	if f.issue(1).Labels[0] != Blocked || pr.State != "closed" {
+		t.Fatalf("labels = %v, pull = %s", f.issue(1).Labels, pr.State)
+	}
+}
+
+func TestSyncRenamesATopicWithoutAReport(t *testing.T) {
+	f := newFake(t)
+	runSync(t, f, testPlan("R1", "One."))
+	renamed := testPlan("R1", "One.")
+	renamed[0].Topic = "renamed"
+	renamed[0].Requirements[0].Topic = "renamed"
+	reports := runSync(t, f, renamed)
+	is := f.issue(1)
+	if len(reports) != 0 || is.Title != "renamed R1" || !strings.Contains(is.Body, "[renamed]") {
+		t.Fatalf("reports = %v, issue = %+v", reports, is)
+	}
+	if before := f.writeCount(); len(runSync(t, f, renamed)) != 0 || f.writeCount() != before {
+		t.Fatalf("a second run after the rename must write nothing")
+	}
+}
