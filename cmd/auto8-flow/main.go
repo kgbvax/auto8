@@ -32,7 +32,7 @@ commands:
   merge      merge an App pull request when all gates pass, or block its issues
   close      copy the summaries of a closed pull request to its issues
 
-  AUTO8_MERGE_ENABLED=true      lets merge merge; without it, merge only blocks
+  AUTO8_MERGE_ENABLED=true      lets merge merge. Without it, merge only blocks.
 
 environment:
   AUTO8_TOKEN or GITHUB_TOKEN   GitHub token (never printed)
