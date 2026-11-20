@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -22,6 +23,9 @@ const usage = `usage: auto8-flow <command> [flags]
 
 commands:
   sync       make the issues match the plan files in docs/plans
+  reap       set blocked on building issues without an open App pull request
+  pick       set building on the ready issues of the next plan, print it as JSON
+  mark       set blocked or needs-operator on building issues of one plan
 
 environment:
   AUTO8_TOKEN or GITHUB_TOKEN   GitHub token (never printed)
@@ -94,6 +98,46 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		plans, reports := flow.LoadPlans(os.DirFS(c.root), "docs/plans")
 		_, err = flow.Sync(ctx, c.client, plans, reports, c.app, stderr)
 		return err
+	case "reap":
+		c, err := setup(fs, rest)
+		if err != nil {
+			return err
+		}
+		changed, err := flow.Reap(ctx, c.client, c.app)
+		for _, n := range changed {
+			fmt.Fprintf(stderr, "#%d: blocked, the build stopped without a pull request\n", n)
+		}
+		return err
+	case "pick":
+		c, err := setup(fs, rest)
+		if err != nil {
+			return err
+		}
+		plans, reports := flow.LoadPlans(os.DirFS(c.root), "docs/plans")
+		if len(reports) > 0 {
+			return fmt.Errorf("pick stopped: %s", strings.Join(reports, "; "))
+		}
+		p, err := flow.PickNext(ctx, c.client, plans, c.app, c.operator)
+		if err != nil {
+			return err
+		}
+		if p == nil {
+			p = &flow.Pick{}
+		}
+		return json.NewEncoder(os.Stdout).Encode(map[string]any{"pick": p})
+	case "mark":
+		state := fs.String("state", "", "blocked or needs-operator")
+		reason := fs.String("reason", "", "why the state changes; written on each issue")
+		plan := fs.String("plan", "", "path of the plan file")
+		ids := fs.String("ids", "", "requirement IDs, separated by commas")
+		c, err := setup(fs, rest)
+		if err != nil {
+			return err
+		}
+		if *plan == "" || *ids == "" {
+			return errors.New("mark needs -plan and -ids")
+		}
+		return flow.Mark(ctx, c.client, c.app, *plan, strings.Split(*ids, ","), *state, *reason)
 	case "help", "-h", "--help":
 		fmt.Fprint(stderr, usage)
 		return nil
