@@ -5,6 +5,7 @@ package flow
 import (
 	"context"
 	"fmt"
+	"slices"
 )
 
 // The state labels of a requirement issue. Done and dropped are not labels:
@@ -25,12 +26,23 @@ var StateLabels = []string{Proposed, Ready, Building, Blocked, NeedsOperator}
 
 // IsStateLabel tells if name is one of the five state labels.
 func IsStateLabel(name string) bool {
-	for _, s := range StateLabels {
-		if s == name {
-			return true
+	return slices.Contains(StateLabels, name)
+}
+
+// dropStateLabels removes every state label except keep from the issue.
+func (c *Client) dropStateLabels(ctx context.Context, is *Issue, keep string) error {
+	var rest []string
+	for _, l := range is.Labels {
+		if IsStateLabel(l) && l != keep {
+			if err := c.RemoveLabel(ctx, is.Number, l); err != nil {
+				return err
+			}
+			continue
 		}
+		rest = append(rest, l)
 	}
-	return false
+	is.Labels = rest
+	return nil
 }
 
 // StatesOf returns the state labels of an issue.
@@ -65,17 +77,9 @@ func (c *Client) SetState(ctx context.Context, is *Issue, state, reason string) 
 	if !IsStateLabel(state) {
 		return fmt.Errorf("%s is not a state label", state)
 	}
-	var keep []string
-	for _, l := range is.Labels {
-		if IsStateLabel(l) && l != state {
-			if err := c.RemoveLabel(ctx, is.Number, l); err != nil {
-				return err
-			}
-			continue
-		}
-		keep = append(keep, l)
+	if err := c.dropStateLabels(ctx, is, state); err != nil {
+		return err
 	}
-	is.Labels = keep
 	if !is.HasLabel(state) {
 		if err := c.AddLabels(ctx, is.Number, state); err != nil {
 			return err
@@ -102,17 +106,9 @@ func (c *Client) Finish(ctx context.Context, is *Issue, final, reason string) er
 	default:
 		return fmt.Errorf("%s is not done or dropped", final)
 	}
-	var keep []string
-	for _, l := range is.Labels {
-		if IsStateLabel(l) {
-			if err := c.RemoveLabel(ctx, is.Number, l); err != nil {
-				return err
-			}
-			continue
-		}
-		keep = append(keep, l)
+	if err := c.dropStateLabels(ctx, is, ""); err != nil {
+		return err
 	}
-	is.Labels = keep
 	if reason != "" {
 		if err := c.AddComment(ctx, is.Number, reason); err != nil {
 			return err

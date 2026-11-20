@@ -110,7 +110,7 @@ func Merge(ctx context.Context, c *Client, in MergeInput) (MergeResult, error) {
 	}
 
 	if in.Main != nil && in.Head != nil {
-		if diffs := CompareRequirements(in.Main, in.Head, "docs/plans"); len(diffs) > 0 {
+		if diffs := CompareRequirements(in.Main, in.Head, PlansDir); len(diffs) > 0 {
 			return block(fmt.Sprintf("The requirements on main changed while pull request #%d was open: %s.", in.Pull, strings.Join(diffs, ", ")))
 		}
 	}

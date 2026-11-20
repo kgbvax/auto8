@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 )
@@ -45,24 +46,21 @@ type Issue struct {
 
 // HasLabel tells if the issue carries the label.
 func (is Issue) HasLabel(name string) bool {
-	for _, l := range is.Labels {
-		if l == name {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(is.Labels, name)
+}
+
+type apiUser struct {
+	Login string `json:"login"`
 }
 
 type apiIssue struct {
-	Number int    `json:"number"`
-	NodeID string `json:"node_id"`
-	Title  string `json:"title"`
-	Body   string `json:"body"`
-	State  string `json:"state"`
-	Reason string `json:"state_reason"`
-	User   struct {
-		Login string `json:"login"`
-	} `json:"user"`
+	Number int     `json:"number"`
+	NodeID string  `json:"node_id"`
+	Title  string  `json:"title"`
+	Body   string  `json:"body"`
+	State  string  `json:"state"`
+	Reason string  `json:"state_reason"`
+	User   apiUser `json:"user"`
 	Labels []struct {
 		Name string `json:"name"`
 	} `json:"labels"`
@@ -97,10 +95,8 @@ type apiPull struct {
 	State    string  `json:"state"`
 	Merged   bool    `json:"merged"`
 	MergedAt *string `json:"merged_at"`
-	User     struct {
-		Login string `json:"login"`
-	} `json:"user"`
-	Head struct {
+	User     apiUser `json:"user"`
+	Head     struct {
 		SHA string `json:"sha"`
 		Ref string `json:"ref"`
 	} `json:"head"`
@@ -205,18 +201,23 @@ func (c *Client) repoURL(format string, args ...any) string {
 // write sends a change, or prints it as one JSON line in dry-run mode.
 func (c *Client) write(ctx context.Context, op map[string]any, method, rawURL string, in, out any) error {
 	if c.DryRun {
-		b, err := json.Marshal(op)
-		if err != nil {
-			return err
-		}
-		w := c.Out
-		if w == nil {
-			w = io.Discard
-		}
-		_, err = fmt.Fprintf(w, "%s\n", b)
-		return err
+		return c.dryRunLine(op)
 	}
 	_, err := c.do(ctx, method, rawURL, in, out)
+	return err
+}
+
+// dryRunLine prints one planned change as a JSON line on Out.
+func (c *Client) dryRunLine(op map[string]any) error {
+	b, err := json.Marshal(op)
+	if err != nil {
+		return err
+	}
+	w := c.Out
+	if w == nil {
+		w = io.Discard
+	}
+	_, err = fmt.Fprintf(w, "%s\n", b)
 	return err
 }
 
@@ -309,10 +310,8 @@ func (c *Client) AddComment(ctx context.Context, n int, body string) error {
 // Comments returns the comments of an issue or a pull request.
 func (c *Client) Comments(ctx context.Context, n int) ([]Comment, error) {
 	type apiComment struct {
-		Body string `json:"body"`
-		User struct {
-			Login string `json:"login"`
-		} `json:"user"`
+		Body string  `json:"body"`
+		User apiUser `json:"user"`
 	}
 	items, err := getAll[apiComment](ctx, c, c.repoURL("/issues/%d/comments", n))
 	if err != nil {
@@ -399,10 +398,8 @@ func (c *Client) PullFiles(ctx context.Context, n int) ([]string, error) {
 // Reviews returns the reviews of a pull request, oldest first.
 func (c *Client) Reviews(ctx context.Context, n int) ([]Review, error) {
 	type apiReview struct {
-		State string `json:"state"`
-		User  struct {
-			Login string `json:"login"`
-		} `json:"user"`
+		State string  `json:"state"`
+		User  apiUser `json:"user"`
 	}
 	items, err := getAll[apiReview](ctx, c, c.repoURL("/pulls/%d/reviews", n))
 	if err != nil {
@@ -506,7 +503,7 @@ func (c *Client) SetBoardState(ctx context.Context, is Issue, state string) erro
 		return nil
 	}
 	if c.DryRun {
-		return c.write(ctx, map[string]any{"op": "board_state", "issue": is.Number, "state": state}, "", "", nil, nil)
+		return c.dryRunLine(map[string]any{"op": "board_state", "issue": is.Number, "state": state})
 	}
 	if err := c.loadStateField(ctx); err != nil {
 		return err

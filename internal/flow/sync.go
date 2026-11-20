@@ -33,6 +33,16 @@ func managedIssues(all []Issue, app string) map[string][]Issue {
 	return out
 }
 
+// firstOpen returns the open issue with the lowest number in list.
+func firstOpen(list []Issue) (Issue, bool) {
+	for _, is := range list {
+		if is.State == "open" {
+			return is, true
+		}
+	}
+	return Issue{}, false
+}
+
 // Reporter writes a report about one issue as a comment, once.
 type Reporter struct {
 	C       *Client

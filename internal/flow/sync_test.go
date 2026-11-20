@@ -179,8 +179,12 @@ func TestSyncDryRunOnThisRepository(t *testing.T) {
 	if _, err := Sync(context.Background(), c, plans, reports, appLogin, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
-	if n := strings.Count(out.String(), `"op":"create_issue"`); n != 32 {
-		t.Fatalf("want 32 create lines, got %d", n)
+	want := 0
+	for _, p := range plans {
+		want += len(p.Requirements)
+	}
+	if n := strings.Count(out.String(), `"op":"create_issue"`); want == 0 || n != want {
+		t.Fatalf("want %d create lines, got %d", want, n)
 	}
 	if f.writeCount() != 0 {
 		t.Fatalf("dry run wrote")

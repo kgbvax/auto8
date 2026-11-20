@@ -44,6 +44,11 @@ environment:
   AUTO8_OPERATOR                default kgbvax
 `
 
+const (
+	defaultApp      = "opsotter-auto8[bot]"
+	defaultOperator = "kgbvax"
+)
+
 func env(name, def string) string {
 	if v := os.Getenv(name); v != "" {
 		return v
@@ -82,8 +87,8 @@ func setup(fs *flag.FlagSet, args []string) (*common, error) {
 			DryRun:     *dry,
 			Out:        os.Stdout,
 		},
-		app:      env("AUTO8_APP_LOGIN", "opsotter-auto8[bot]"),
-		operator: env("AUTO8_OPERATOR", "kgbvax"),
+		app:      env("AUTO8_APP_LOGIN", defaultApp),
+		operator: env("AUTO8_OPERATOR", defaultOperator),
 		root:     *root,
 	}, nil
 }
@@ -102,7 +107,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		plans, reports := flow.LoadPlans(os.DirFS(c.root), "docs/plans")
+		plans, reports := flow.LoadPlans(os.DirFS(c.root), flow.PlansDir)
 		_, err = flow.Sync(ctx, c.client, plans, reports, c.app, stderr)
 		return err
 	case "reap":
@@ -120,7 +125,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		if err != nil {
 			return err
 		}
-		plans, reports := flow.LoadPlans(os.DirFS(c.root), "docs/plans")
+		plans, reports := flow.LoadPlans(os.DirFS(c.root), flow.PlansDir)
 		if len(reports) > 0 {
 			return fmt.Errorf("pick stopped: %s", strings.Join(reports, "; "))
 		}
@@ -175,16 +180,16 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		if *base == "" || *author == "" {
 			return errors.New("reqcheck needs -base and -author")
 		}
-		bfs, err := flow.GitFS(*root, *base, "docs/plans")
+		bfs, err := flow.GitFS(*root, *base, flow.PlansDir)
 		if err != nil {
 			return err
 		}
-		hfs, err := flow.GitFS(*root, *head, "docs/plans")
+		hfs, err := flow.GitFS(*root, *head, flow.PlansDir)
 		if err != nil {
 			return err
 		}
-		app := env("AUTO8_APP_LOGIN", "opsotter-auto8[bot]")
-		if diffs := flow.ReqCheck(bfs, hfs, "docs/plans", *author, app); len(diffs) > 0 {
+		app := env("AUTO8_APP_LOGIN", defaultApp)
+		if diffs := flow.ReqCheck(bfs, hfs, flow.PlansDir, *author, app); len(diffs) > 0 {
 			fmt.Fprint(stderr, flow.FormatDiffs(diffs))
 			return fmt.Errorf("the pull request changes %d requirements, and only the operator can change requirements", len(diffs))
 		}
@@ -202,11 +207,11 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		if *pr == 0 || *headRef == "" {
 			return errors.New("merge needs -pr and -head")
 		}
-		mfs, err := flow.GitFS(c.root, *mainRef, "docs/plans")
+		mfs, err := flow.GitFS(c.root, *mainRef, flow.PlansDir)
 		if err != nil {
 			return err
 		}
-		hfs, err := flow.GitFS(c.root, *headRef, "docs/plans")
+		hfs, err := flow.GitFS(c.root, *headRef, flow.PlansDir)
 		if err != nil {
 			return err
 		}

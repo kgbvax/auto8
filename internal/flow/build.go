@@ -66,11 +66,8 @@ func openManaged(ctx context.Context, c *Client, app string) (map[string]Issue, 
 	}
 	out := map[string]Issue{}
 	for k, list := range managedIssues(all, app) {
-		for _, is := range list {
-			if is.State == "open" {
-				out[k] = is
-				break
-			}
+		if is, ok := firstOpen(list); ok {
+			out[k] = is
 		}
 	}
 	return out, nil
@@ -189,8 +186,7 @@ func PickNext(ctx context.Context, c *Client, plans []Plan, app, operator string
 		cd := cand{is: is, m: m, since: since}
 		byPlan[m.Plan] = append(byPlan[m.Plan], cd)
 		if oldest == nil || since.Before(oldest.since) || (since.Equal(oldest.since) && is.Number < oldest.is.Number) {
-			c := cd
-			oldest = &c
+			oldest = &cd
 		}
 	}
 	if oldest == nil {

@@ -53,12 +53,7 @@ func Close(ctx context.Context, c *Client, app string, n int) error {
 	}
 	managed := managedIssues(all, app)
 	openIssue := func(plan, id string) (Issue, bool) {
-		for _, is := range managed[key(plan, id)] {
-			if is.State == "open" {
-				return is, true
-			}
-		}
-		return Issue{}, false
+		return firstOpen(managed[key(plan, id)])
 	}
 	build, hasBuild := ParseBuildMarker(pr.Body)
 	if pr.Author != app {

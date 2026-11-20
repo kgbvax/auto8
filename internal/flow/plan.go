@@ -17,6 +17,9 @@ import (
 	"strings"
 )
 
+// PlansDir is the directory of the plan files, relative to the repository root.
+const PlansDir = "docs/plans"
+
 // UnifiedContract is the artifact_contract value of the plans that the tool reads.
 const UnifiedContract = "ce-unified-plan/v1"
 
