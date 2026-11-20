@@ -1,16 +1,16 @@
 # The auto8 development life cycle
 
-This document describes how a requirement for auto8 goes from an idea to merged code. It also says where the operator sees the state of each requirement. The plan `docs/plans/2026-11-20-1039-feat-requirements-workflow-plan.md` describes the tools for this process. Its requirement IDs (R1 to R28) own the rules, and this document names them in brackets. The section "What works today" at the end says which parts exist now.
+This document describes how a requirement for auto8 goes from an idea to merged code. It also says where the operator sees the state of each requirement. The plan `docs/plans/2026-11-20-1039-feat-requirements-workflow-plan.md` describes the tools for this process. Its requirement IDs (R1 to R32) own the rules, and this document names them in brackets. The section "What works today" at the end says which parts exist now.
 
 ## Roles
 
 The operator is the owner of auto8 and the only person who decides what the build agent builds. The operator writes and refines the requirements, marks them ready, and approves every change that the process holds.
 
-The build agent is a Claude agent that a schedule starts in the cloud. A build is one run of the build agent on one plan. The build agent builds ready requirements, opens pull requests, and writes the summaries. It acts only on requirements that the operator marked ready.
+The build agent is a Claude agent in GitHub Actions that a schedule starts. A build is one run of the build agent on one plan. The build agent builds ready requirements, opens pull requests, and writes the summaries. It acts only on requirements that the operator marked ready.
 
-The sync step is a tool in this repository. It keeps one GitHub issue for each requirement in the plan files.
+The sync step is a tool in this repository. It keeps one GitHub issue for each requirement in the plan files. It runs by itself after each push to `main` that changes a plan file (R5).
 
-The build agent and the sync step work under their own GitHub identity. That identity has access only to `kgbvax/auto8` and is not a code owner (R25).
+The build agent and the sync step work under their own GitHub identity. That identity has access only to `kgbvax/auto8` and its project board, and it is not a code owner (R25).
 
 GitHub runs the CI jobs. Automatic merge means that GitHub merges a pull request by itself after all required jobs pass (R17). GitHub also holds each pull request that changes TX control code or a process file, until the operator approves it (R18, R19).
 
@@ -48,7 +48,7 @@ The operator runs `ce-ideate` to find and rank possible directions. The result i
 
 ### 2. Write the requirements
 
-The operator runs `ce-brainstorm` on one direction. The result is a plan file in `docs/plans` with numbered requirements. The operator then runs the sync step. The sync step opens one issue for each requirement, with the state `proposed` (R5).
+The operator runs `ce-brainstorm` on one direction. The result is a plan file in `docs/plans` with numbered requirements. The operator then pushes the plan file to `main`. The sync step opens one issue for each requirement, with the state `proposed` (R5).
 
 ### 3. Refine
 
@@ -60,7 +60,7 @@ If someone changed an issue body on GitHub, the sync step does not overwrite it.
 
 The operator sets the label `ready` on each issue that the operator wants built. GitHub removes a label `ready` that any other identity sets (R26). The build agent works on no issue without this label.
 
-If the text of a `ready` requirement changes later, the sync step sets its issue back to `proposed` (R7). If the new text is right, the operator sets `ready` again.
+If the text of a `ready` or `blocked` requirement changes later, the sync step sets its issue back to `proposed` (R7). If the new text is right, the operator sets `ready` again.
 
 ### 5. Build
 
@@ -73,7 +73,7 @@ The schedule starts the build agent a few times a day. At most one build runs at
 5. It runs `ce-code-review` and the simple-english linter, and fixes what they find (R14).
 6. It opens a pull request that names the issues it closes.
 
-If a build stops without a result, the next run sets the label `blocked` on its issues and names that reason (R11).
+If a build stops without a result, the next run sets the label `blocked` on its issues and names that reason (R11). While a plan has an open pull request of the build agent, no build takes that plan again (R32). If a requirement text changes during a build, the pull request does not merge, and the issue goes to `blocked` (R29).
 
 ### 6. Gates
 
@@ -82,6 +82,7 @@ A gate is a condition that must be true before a pull request merges. GitHub enf
 1. The job `test` passes. It runs `go build`, `go vet` and `go test -race`.
 2. The integration job passes. It runs auto8 against a simulated WSJT-X, a real MQTT broker in a container, and a simulated chase-queue (R15).
 3. The writing job passes. It lints each changed Markdown file with the simple-english linter (R16).
+4. The requirements job passes. A pull request of the build agent that changes the text of a requirement fails this job (R30).
 
 Automatic merge stays off until the integration job and the writing job exist (R17). Nobody changes the branch protection or the permission for automatic merge before the operator agrees.
 
@@ -89,13 +90,13 @@ Automatic merge stays off until the integration job and the writing job exist (R
 
 TX control is any code that can make WSJT-X or MSHV transmit. It is also the code that decides the time at which auto8 can ask for a transmission, such as the arm and presence logic. TX control code lives only in marked paths that the operator owns as code owner (R18).
 
-The process files are `.github/` (with the code owner file), `.claude/`, `tools/simple-english/`, `CLAUDE.md` and this document (R19).
+The process files are `.github/` (with the code owner file), `.claude/` and `tools/simple-english/`. The workflow tool, the integration test peers, `CLAUDE.md` and this document are process files too (R19). The agent identity cannot change workflow files at all. If a build needs such a change, it sets the label `blocked` and describes the change.
 
-If a pull request changes TX control code or a process file, GitHub does not merge it before the operator approves it. The build agent also sets the label `needs-operator` on such a pull request.
+If a pull request changes TX control code or a process file, GitHub does not merge it before the operator approves it. The build agent also sets the label `needs-operator` on the issues of such a pull request.
 
 Another project is every repository other than `kgbvax/auto8`, for example opsotter (with chase-queue), horstreporter and StationA. A change to a vendored copy of their code counts as a change in that project. So does a change to the MQTT topics and payloads that they read. If a requirement needs such a change, the build agent writes no code there. It describes the change in the issue and sets the label `blocked` (R20). The operator makes the change in the other project and sets `ready` again.
 
-A build or a job can fail. If the build agent cannot fix the failure in the same build, it sets the label `blocked` and names the reason (R21).
+A build or a job can fail. If the build agent cannot fix the failure in the same build, it sets the label `blocked` and names the reason (R21). If the operator closes a held pull request without a merge, or asks for changes, its issues go to `blocked` (R31).
 
 ### 8. Close
 
