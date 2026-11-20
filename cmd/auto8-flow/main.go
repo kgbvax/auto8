@@ -29,6 +29,10 @@ commands:
   mark       set blocked or needs-operator on building issues of one plan
   holds      set needs-operator if an App pull request changes owned files
   reqcheck   fail if an App pull request changes the requirements
+  merge      merge an App pull request when all gates pass, or block its issues
+  close      copy the summaries of a closed pull request to its issues
+
+  AUTO8_MERGE_ENABLED=true      lets merge merge; without it, merge only blocks
 
 environment:
   AUTO8_TOKEN or GITHUB_TOKEN   GitHub token (never printed)
@@ -186,6 +190,45 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		}
 		fmt.Fprintln(stderr, "reqcheck: the requirements did not change")
 		return nil
+	case "merge":
+		pr := fs.Int("pr", 0, "number of the pull request")
+		mainRef := fs.String("main", "origin/main", "git ref of the current main")
+		headRef := fs.String("head", "", "git ref of the pull request head")
+		require := fs.String("require", strings.Join(flow.RequiredJobs, ","), "required jobs, separated by commas")
+		c, err := setup(fs, rest)
+		if err != nil {
+			return err
+		}
+		if *pr == 0 || *headRef == "" {
+			return errors.New("merge needs -pr and -head")
+		}
+		mfs, err := flow.GitFS(c.root, *mainRef, "docs/plans")
+		if err != nil {
+			return err
+		}
+		hfs, err := flow.GitFS(c.root, *headRef, "docs/plans")
+		if err != nil {
+			return err
+		}
+		res, err := flow.Merge(ctx, c.client, flow.MergeInput{
+			App: c.app, Operator: c.operator, Pull: *pr, Required: strings.Split(*require, ","),
+			Main: mfs, Head: hfs, Enabled: os.Getenv("AUTO8_MERGE_ENABLED") == "true",
+		})
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(stderr, "merge #%d: merged=%v, %s\n", *pr, res.Merged, res.Reason)
+		return nil
+	case "close":
+		pr := fs.Int("pr", 0, "number of the pull request")
+		c, err := setup(fs, rest)
+		if err != nil {
+			return err
+		}
+		if *pr == 0 {
+			return errors.New("close needs -pr")
+		}
+		return flow.Close(ctx, c.client, c.app, *pr)
 	case "help", "-h", "--help":
 		fmt.Fprint(stderr, usage)
 		return nil
