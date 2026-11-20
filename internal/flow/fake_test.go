@@ -137,7 +137,7 @@ func issueJSON(is *fakeIssue) map[string]any {
 		labels = append(labels, map[string]string{"name": l})
 	}
 	return map[string]any{"number": is.Number, "node_id": fmt.Sprintf("I_%d", is.Number), "title": is.Title, "body": is.Body,
-		"state": is.State, "user": map[string]string{"login": is.Author}, "labels": labels}
+		"state": is.State, "state_reason": is.Reason, "user": map[string]string{"login": is.Author}, "labels": labels}
 }
 
 func page[T any](r *http.Request, all []T) []T {
@@ -364,6 +364,13 @@ func (f *fakeGitHub) graphql(w http.ResponseWriter, in map[string]any) {
 	q, _ := in["query"].(string)
 	vars, _ := in["variables"].(map[string]any)
 	switch {
+	case strings.Contains(q, "projectItems"):
+		n, _ := strconv.Atoi(strings.TrimPrefix(vars["i"].(string), "I_"))
+		var nodes []map[string]any
+		if is, ok := f.issues[n]; ok && is.BoardState != "" {
+			nodes = append(nodes, map[string]any{"project": map[string]string{"id": "PVT_1"}, "fieldValueByName": map[string]string{"name": is.BoardState}})
+		}
+		f.json(w, map[string]any{"data": map[string]any{"node": map[string]any{"projectItems": map[string]any{"nodes": nodes}}}})
 	case strings.Contains(q, "field(name:"):
 		var opts []map[string]string
 		for _, s := range append(append([]string{}, StateLabels...), Done, Dropped) {

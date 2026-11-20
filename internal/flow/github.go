@@ -38,6 +38,7 @@ type Issue struct {
 	Title  string
 	Body   string
 	State  string // open or closed
+	Reason string // completed or not_planned, for a closed issue
 	Author string
 	Labels []string
 }
@@ -58,6 +59,7 @@ type apiIssue struct {
 	Title  string `json:"title"`
 	Body   string `json:"body"`
 	State  string `json:"state"`
+	Reason string `json:"state_reason"`
 	User   struct {
 		Login string `json:"login"`
 	} `json:"user"`
@@ -68,7 +70,7 @@ type apiIssue struct {
 }
 
 func (a apiIssue) issue() Issue {
-	is := Issue{Number: a.Number, NodeID: a.NodeID, Title: a.Title, Body: a.Body, State: a.State, Author: a.User.Login}
+	is := Issue{Number: a.Number, NodeID: a.NodeID, Title: a.Title, Body: a.Body, State: a.State, Reason: a.Reason, Author: a.User.Login}
 	for _, l := range a.Labels {
 		is.Labels = append(is.Labels, l.Name)
 	}
@@ -526,4 +528,37 @@ func (c *Client) SetBoardState(ctx context.Context, is Issue, state string) erro
 	}
 	setQ := `mutation($p: ID!, $i: ID!, $f: ID!, $o: String!) { updateProjectV2ItemFieldValue(input: {projectId: $p, itemId: $i, fieldId: $f, value: {singleSelectOptionId: $o}}) { projectV2Item { id } } }`
 	return c.graphql(ctx, setQ, map[string]any{"p": c.ProjectID, "i": added.Add.Item.ID, "f": c.stateField, "o": opt}, nil)
+}
+
+// BoardState returns the State field of the issue on the project board.
+// It returns an empty string if the issue is not on the board or has no
+// State. Without a ProjectID, it returns an empty string.
+func (c *Client) BoardState(ctx context.Context, is Issue) (string, error) {
+	if c.ProjectID == "" || is.NodeID == "" {
+		return "", nil
+	}
+	var data struct {
+		Node struct {
+			ProjectItems struct {
+				Nodes []struct {
+					Project struct {
+						ID string `json:"id"`
+					} `json:"project"`
+					Field *struct {
+						Name string `json:"name"`
+					} `json:"fieldValueByName"`
+				} `json:"nodes"`
+			} `json:"projectItems"`
+		} `json:"node"`
+	}
+	q := `query($i: ID!) { node(id: $i) { ... on Issue { projectItems(first: 20) { nodes { project { id } fieldValueByName(name: "State") { ... on ProjectV2ItemFieldSingleSelectValue { name } } } } } } }`
+	if err := c.graphql(ctx, q, map[string]any{"i": is.NodeID}, &data); err != nil {
+		return "", err
+	}
+	for _, n := range data.Node.ProjectItems.Nodes {
+		if n.Project.ID == c.ProjectID && n.Field != nil {
+			return n.Field.Name, nil
+		}
+	}
+	return "", nil
 }

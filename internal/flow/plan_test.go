@@ -3,11 +3,18 @@
 package flow
 
 import (
+	"io/fs"
 	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
 )
+
+// osDir returns the root of this repository as a file system.
+func osDir(t *testing.T) fs.FS {
+	t.Helper()
+	return os.DirFS("../..")
+}
 
 const unifiedPlan = `---
 title: Example - Plan
@@ -122,7 +129,7 @@ func TestLoadPlansRefusesDuplicateTopics(t *testing.T) {
 }
 
 func TestLoadPlansOfThisRepository(t *testing.T) {
-	plans, reports := LoadPlans(os.DirFS("../.."), "docs/plans")
+	plans, reports := LoadPlans(osDir(t), "docs/plans")
 	if len(reports) != 0 {
 		t.Fatalf("the plans of this repository give reports: %v", reports)
 	}
