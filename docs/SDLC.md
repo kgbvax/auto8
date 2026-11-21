@@ -22,7 +22,7 @@ A requirement is a numbered statement in a plan file in `docs/plans`, for exampl
 
 An idea is a possible direction that is not a requirement yet. Ideas from `ce-ideate` stay in `docs/ideation` and get no issue.
 
-Each requirement has one GitHub issue. The issue title names the plan topic and the requirement ID, for example `decoder-v1 R3`. The issue body links to the requirement in the plan file and carries no requirement text of its own (R6). A label on the issue gives the state of the requirement.
+Each requirement has one GitHub issue. The issue title names the plan topic, the requirement ID and the requirement name, for example `decoder-v1 R3: <name>`. The issue body carries a copy of the requirement text and links to it in the plan file (R6). The plan file stays the only place where anyone writes or changes the text. A label on the issue gives the state of the requirement.
 
 The GitHub project board of auto8 groups the issues by state (R9). The operator reads the state of each requirement there.
 

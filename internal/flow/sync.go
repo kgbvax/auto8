@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 )
 
 // key names one requirement across all plans.
@@ -182,13 +181,10 @@ func syncOne(ctx context.Context, c *Client, rep *Reporter, app string, r Requir
 
 	is := open[0]
 	m, _ := ParseMarker(is.Body)
-	// The body counts as edited only if it differs from what the sync
-	// step wrote, with the topic that the title still names.
-	old := r
-	old.Hash = m.Hash
-	old.Topic = strings.TrimSuffix(is.Title, " "+r.ID)
-	edited := is.Body != IssueBody(old, c.Repo)
-	renamed := !edited && old.Topic != r.Topic
+	// The body counts as edited only if the sync step did not write it.
+	// The sync step wrote it in the old format or in the new format, for
+	// the topic that the title still names and for any older text or name.
+	edited := !bodyFromSync(is.Body, titleTopic(is.Title, r.ID), c.Repo, m)
 	if edited {
 		if err := rep.Report(ctx, is.Number, "Someone changed the body of this issue. The sync step does not overwrite it. Put the body back as the sync step wrote it."); err != nil {
 			return err
@@ -210,27 +206,31 @@ func syncOne(ctx context.Context, c *Client, rep *Reporter, app string, r Requir
 				return err
 			}
 		}
-		if renamed {
-			if err := c.UpdateIssueTitle(ctx, is.Number, IssueTitle(r)); err != nil {
-				return err
-			}
+	}
+	if !edited {
+		if err := updateIssue(ctx, c, is, r); err != nil {
+			return err
 		}
-		if !edited {
-			if err := c.UpdateIssueBody(ctx, is.Number, IssueBody(r, c.Repo)); err != nil {
-				return err
-			}
-		}
+	}
+	if m.Hash != r.Hash {
 		return nil
 	}
-	if renamed {
-		if err := c.UpdateIssueTitle(ctx, is.Number, IssueTitle(r)); err != nil {
-			return err
-		}
-		if err := c.UpdateIssueBody(ctx, is.Number, IssueBody(r, c.Repo)); err != nil {
+	return syncBoard(ctx, c, is)
+}
+
+// updateIssue writes the title and the body for r, if they differ.
+func updateIssue(ctx context.Context, c *Client, is Issue, r Requirement) error {
+	if title := IssueTitle(r); is.Title != title {
+		if err := c.UpdateIssueTitle(ctx, is.Number, title); err != nil {
 			return err
 		}
 	}
-	return syncBoard(ctx, c, is)
+	if body := IssueBody(r, c.Repo); is.Body != body {
+		if err := c.UpdateIssueBody(ctx, is.Number, body); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func syncGone(ctx context.Context, c *Client, rep *Reporter, app string, is Issue, m Marker) error {

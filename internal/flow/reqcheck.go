@@ -35,19 +35,29 @@ func GitFS(root, ref, dir string) (fs.FS, error) {
 	return m, nil
 }
 
-// reqSet maps "topic R3" to the hash of the requirement text.
-func reqSet(plans []Plan) map[string]string {
-	out := map[string]string{}
+// reqInfo is the part of a requirement that a pull request of the App
+// must not change.
+type reqInfo struct {
+	Label string // "plan R3", for the report lines
+	Topic string
+	Name  string
+	Hash  string
+}
+
+// reqSet maps the plan and the ID of each requirement to its reqInfo.
+func reqSet(plans []Plan) map[string]reqInfo {
+	out := map[string]reqInfo{}
 	for _, p := range plans {
 		for _, r := range p.Requirements {
-			out[IssueTitle(r)] = r.Hash
+			out[key(r.Plan, r.ID)] = reqInfo{Label: r.Plan + " " + r.ID, Topic: r.Topic, Name: r.Name, Hash: r.Hash}
 		}
 	}
 	return out
 }
 
 // CompareRequirements compares the requirements of the plans in dir of
-// base and head. It returns one line for each difference and for each
+// base and head. It compares the topic, the ID, the name and the hash of
+// each requirement. It returns one line for each difference and for each
 // problem in the plan files of head. No lines means that the
 // requirements did not change.
 func CompareRequirements(base, head fs.FS, dir string) []string {
@@ -69,15 +79,23 @@ func CompareRequirements(base, head fs.FS, dir string) []string {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		bh, inB := b[k]
-		hh, inH := h[k]
+		bi, inB := b[k]
+		hi, inH := h[k]
 		switch {
 		case inB && !inH:
-			out = append(out, k+" is gone")
+			out = append(out, bi.Label+" is gone")
 		case !inB && inH:
-			out = append(out, k+" is new")
-		case bh != hh:
-			out = append(out, k+" has a changed text")
+			out = append(out, hi.Label+" is new")
+		default:
+			if bi.Topic != hi.Topic {
+				out = append(out, bi.Label+" has a changed topic")
+			}
+			if bi.Name != hi.Name {
+				out = append(out, bi.Label+" has a changed name")
+			}
+			if bi.Hash != hi.Hash {
+				out = append(out, bi.Label+" has a changed text")
+			}
 		}
 	}
 	return out

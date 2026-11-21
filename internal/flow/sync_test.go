@@ -216,3 +216,84 @@ func TestSyncRenamesATopicWithoutAReport(t *testing.T) {
 		t.Fatalf("a second run after the rename must write nothing")
 	}
 }
+
+// namedPlan returns a plan with one requirement R1 that has a name.
+func namedPlan(name, text string) []Plan {
+	p := testPlan("R1", text)
+	p[0].Requirements[0].Name = name
+	return p
+}
+
+func TestSyncWritesTheNameAndTheText(t *testing.T) {
+	f := newFake(t)
+	runSync(t, f, namedPlan("Jump to a spot", "When x, jump."))
+	is := f.issue(1)
+	if is.Title != "example R1: Jump to a spot" || !strings.Contains(is.Body, "> When x, jump.") || !strings.Contains(is.Body, "): Jump to a spot") {
+		t.Fatalf("issue = %+v", is)
+	}
+}
+
+func TestSyncMigratesALegacyBody(t *testing.T) {
+	f := newFake(t)
+	plans := namedPlan("Jump to a spot", "When x, jump.")
+	r := plans[0].Requirements[0]
+	f.addIssue(appLogin, "example R1", legacyIssueBody(r, "opsotter/auto8"), Ready)
+	f.issue(1).BoardState = Ready
+	reports := runSync(t, f, plans)
+	is := f.issue(1)
+	if len(reports) != 0 || len(is.Comments) != 0 {
+		t.Fatalf("reports = %v, comments = %v", reports, is.Comments)
+	}
+	if is.Title != IssueTitle(r) || is.Body != IssueBody(r, "opsotter/auto8") {
+		t.Fatalf("issue = %+v", is)
+	}
+	if len(is.Labels) != 1 || is.Labels[0] != Ready {
+		t.Fatalf("a migration must not change the state: %v", is.Labels)
+	}
+	if before := f.writeCount(); len(runSync(t, f, plans)) != 0 || f.writeCount() != before {
+		t.Fatalf("a second run after the migration must write nothing")
+	}
+}
+
+func TestSyncRenamesARequirementWithoutAReport(t *testing.T) {
+	f := newFake(t)
+	seed(t, f, namedPlan("Old name", "One."), Ready)
+	plans := namedPlan("New name", "One.")
+	reports := runSync(t, f, plans)
+	is := f.issue(1)
+	if len(reports) != 0 || len(is.Comments) != 0 {
+		t.Fatalf("reports = %v, comments = %v", reports, is.Comments)
+	}
+	if is.Title != "example R1: New name" || is.Body != IssueBody(plans[0].Requirements[0], "opsotter/auto8") {
+		t.Fatalf("issue = %+v", is)
+	}
+	if len(is.Labels) != 1 || is.Labels[0] != Ready {
+		t.Fatalf("a name change must not change the state: %v", is.Labels)
+	}
+}
+
+func TestSyncKeepsAHandEditedQuote(t *testing.T) {
+	f := newFake(t)
+	plans := namedPlan("A name", "One.")
+	runSync(t, f, plans)
+	f.issue(1).Body = strings.Replace(f.issue(1).Body, "> One.", "> One, edited by hand.", 1)
+	edited := f.issue(1).Body
+	reports := runSync(t, f, plans)
+	if is := f.issue(1); len(reports) != 1 || is.Body != edited {
+		t.Fatalf("reports = %v, body = %q", reports, is.Body)
+	}
+}
+
+func TestSyncSetsAChangedNamedRequirementBackToProposed(t *testing.T) {
+	f := newFake(t)
+	seed(t, f, namedPlan("A name", "One."), Ready)
+	plans := namedPlan("A name", "One, changed.")
+	runSync(t, f, plans)
+	is := f.issue(1)
+	if len(is.Labels) != 1 || is.Labels[0] != Proposed {
+		t.Fatalf("labels = %v", is.Labels)
+	}
+	if is.Body != IssueBody(plans[0].Requirements[0], "opsotter/auto8") {
+		t.Fatalf("body = %q", is.Body)
+	}
+}

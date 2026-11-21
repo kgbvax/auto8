@@ -78,7 +78,7 @@ def strip_code(text):
 def sentences(text):
     # Append ". " to each item so items become their own sentence units instead of merging.
     text = re.sub(r"^\s*([-*]|\d+\.)\s+(.*?)([.!?:])?\s*$", lambda m: m.group(2) + (m.group(3) or ".") + " ", text, flags=re.M)
-    parts = re.split(r"(?<=[.!?:])\s+", text)
+    parts = re.split(r"(?<=[.!?:])\s+|(?<=[.!?:]\*\*)\s+", text)
     return [p.strip() for p in parts if len(p.strip().split()) >= 2]
 
 

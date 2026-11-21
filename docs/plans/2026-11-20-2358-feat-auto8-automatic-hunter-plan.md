@@ -68,58 +68,58 @@ The station has the parts that an automatic hunter needs, but nothing joins them
 
 **Operation and safety**
 
-- R1. When the operator enables auto8, it hunts, answers, calls CQ and changes band with no click of the operator.
-- R2. auto8 transmits only while it is enabled and the operator is present. Present means a live logotter presence heartbeat, from the station PC or from the laptop of the operator during remote operation.
-- R3. The operator can stop auto8 at once. When auto8 stops, or when presence or a required input becomes stale or missing, auto8 sends HaltTx and makes no new call.
-- R4. When the operator halts TX, turns Enable Tx off, or changes band or mode in WSJT-X, auto8 disables itself.
-- R6. auto8 acts on the station only with band and frequency commands on the StationA bus. It never commands the PA, the radio power, the antennas, the tuner or the rotators.
-- R7. auto8 runs on the computer where WSJT-X runs: the station PC, or the laptop of the operator during remote operation.
-- R8. auto8 shows its state to the operator: enabled or stopped, band and mode, current task, the reason for the last stop, and reduced mode (R25).
-- R30. Every stop latches. After a stop, auto8 calls again only after the operator enables it again.
-- R32. After a band change, auto8 transmits only after the station reports that the antenna switch settled, the antenna controller stopped, and the tuner finished.
+- R1. **Hunt with no click.** When the operator enables auto8, it hunts, answers, calls CQ and changes band with no click of the operator.
+- R2. **TX needs the operator present.** auto8 transmits only while it is enabled and the operator is present. Present means a live logotter presence heartbeat, from the station PC or from the laptop of the operator during remote operation.
+- R3. **Stop at once.** The operator can stop auto8 at once. When auto8 stops, or when presence or a required input becomes stale or missing, auto8 sends HaltTx and makes no new call.
+- R4. **Disable on operator action.** When the operator halts TX, turns Enable Tx off, or changes band or mode in WSJT-X, auto8 disables itself.
+- R6. **Bus commands for band only.** auto8 acts on the station only with band and frequency commands on the StationA bus. It never commands the PA, the radio power, the antennas, the tuner or the rotators.
+- R7. **Run on the WSJT-X computer.** auto8 runs on the computer where WSJT-X runs: the station PC, or the laptop of the operator during remote operation.
+- R8. **Show the state.** auto8 shows its state to the operator: enabled or stopped, band and mode, current task, the reason for the last stop, and reduced mode (R25).
+- R30. **Every stop latches.** Every stop latches. After a stop, auto8 calls again only after the operator enables it again.
+- R32. **Wait for a settled station.** After a band change, auto8 transmits only after the station reports that the antenna switch settled, the antenna controller stopped, and the tuner finished.
 
 **Finding and choosing stations**
 
-- R9. chase-queue decides which stations are needed. auto8 sends each station that it decodes to chase-queue as a candidate source and reads the answer from the state of chase-queue.
-- R10. A high-value station has a need that chase-queue marks as ATNO, or chase-queue lists it as a first-tier expedition.
-- R11. auto8 answers a station that calls the operator, unless auto8 is busy with a high-value station. A caller interrupts the hunt for a station that is not high value.
-- R12. auto8 takes each logged QSO from the UDP QSO packet of WSJT-X and makes it reach the log at once. auto8 never calls a station again on a band where it just worked that station.
-- R13. auto8 never stops a running QSO to start another task.
-- R31. auto8 does not follow a spot on a Fox/Hound dial frequency and does not call while WSJT-X is in a special operating mode. It highlights such a station and shows the spot to the operator.
+- R9. **chase-queue decides the needs.** chase-queue decides which stations are needed. auto8 sends each station that it decodes to chase-queue as a candidate source and reads the answer from the state of chase-queue.
+- R10. **Define a high-value station.** A high-value station has a need that chase-queue marks as ATNO, or chase-queue lists it as a first-tier expedition.
+- R11. **Answer a caller.** auto8 answers a station that calls the operator, unless auto8 is busy with a high-value station. A caller interrupts the hunt for a station that is not high value.
+- R12. **Log each QSO at once.** auto8 takes each logged QSO from the UDP QSO packet of WSJT-X and makes it reach the log at once. auto8 never calls a station again on a band where it just worked that station.
+- R13. **Never stop a running QSO.** auto8 never stops a running QSO to start another task.
+- R31. **Skip Fox/Hound and special modes.** auto8 does not follow a spot on a Fox/Hound dial frequency and does not call while WSJT-X is in a special operating mode. It highlights such a station and shows the spot to the operator.
 
 **Bands and modes**
 
-- R14. auto8 uses only the bands in a list that the operator keeps.
-- R15. On each band, auto8 selects FT8 or FT4 by the activity on the band and by where the needed stations are.
-- R16. auto8 stays on a band while the band gives needed QSOs at a rate above the average of all listed bands. If the rate drops below that average, auto8 leaves the band. It also visits the other bands for short samples.
-- R17. auto8 measures the activity of a band from its own decodes and from the PSK Reporter data of horstreporter. A band with low activity gets short visits. Until auto8 has enough results for R16, it selects bands by activity only.
-- R18. When chase-queue shows a spot of a high-value station on another listed band, auto8 changes to that band as soon as no QSO runs.
-- R19. auto8 never changes band or mode while a QSO runs.
+- R14. **Use only listed bands.** auto8 uses only the bands in a list that the operator keeps.
+- R15. **Select FT8 or FT4.** On each band, auto8 selects FT8 or FT4 by the activity on the band and by where the needed stations are.
+- R16. **Stay on a productive band.** auto8 stays on a band while the band gives needed QSOs at a rate above the average of all listed bands. If the rate drops below that average, auto8 leaves the band. It also visits the other bands for short samples.
+- R17. **Measure band activity.** auto8 measures the activity of a band from its own decodes and from the PSK Reporter data of horstreporter. A band with low activity gets short visits. Until auto8 has enough results for R16, it selects bands by activity only.
+- R18. **Jump to a high-value spot.** When chase-queue shows a spot of a high-value station on another listed band, auto8 changes to that band as soon as no QSO runs.
+- R19. **No band change during a QSO.** auto8 never changes band or mode while a QSO runs.
 
 **TX frequency**
 
-- R20. auto8 selects its TX offset at a place where the band activity shows no station.
-- R21. auto8 moves its TX offset to another free place from time to time. It does this also without a visible clash, to get past stations that it cannot hear. The number of moves per hour has an upper limit.
+- R20. **Select a free TX offset.** auto8 selects its TX offset at a place where the band activity shows no station.
+- R21. **Move the TX offset.** auto8 moves its TX offset to another free place from time to time. It does this also without a visible clash, to get past stations that it cannot hear. The number of moves per hour has an upper limit.
 
 **CQ**
 
-- R22. When auto8 hears no needed station and no caller on the band, it calls a directed CQ ("CQ DX"). A truly idle band has no needed station and no caller, and no listed band has a high-value spot. Only on a truly idle band does auto8 call a plain CQ.
-- R23. A CQ run has an upper limit on its length.
+- R22. **Call a directed CQ.** When auto8 hears no needed station and no caller on the band, it calls a directed CQ ("CQ DX"). A truly idle band has no needed station and no caller, and no listed band has a high-value spot. Only on a truly idle band does auto8 call a plain CQ.
+- R23. **Limit the CQ run.** A CQ run has an upper limit on its length.
 
 **Programs**
 
-- R24. CQ (R22) and the choice of the TX offset (R20, R21) use a patched WSJT-X build. Its UDP commands set the TX offset and turn Enable Tx on. auto8 describes these commands. The patched build lives in its own fork, outside this repository.
-- R25. With stock WSJT-X, auto8 runs in reduced mode. It hunts and answers, but it calls no CQ and does not choose its TX offset.
+- R24. **Use a patched WSJT-X.** CQ (R22) and the choice of the TX offset (R20, R21) use a patched WSJT-X build. Its UDP commands set the TX offset and turn Enable Tx on. auto8 describes these commands. The patched build lives in its own fork, outside this repository.
+- R25. **Reduced mode with stock WSJT-X.** With stock WSJT-X, auto8 runs in reduced mode. It hunts and answers, but it calls no CQ and does not choose its TX offset.
 
 **Behavior on the air**
 
-- R26. auto8 calls a station only after that station sends CQ, RR73, RRR or 73. It never calls into an open QSO of that station.
-- R27. auto8 never transmits on the TX offset of the station that it calls.
-- R28. auto8 calls one station for a limited number of tries. Then it skips that station for a time and goes to the next task.
+- R26. **Call only at the right time.** auto8 calls a station only after that station sends CQ, RR73, RRR or 73. It never calls into an open QSO of that station.
+- R27. **Never transmit on their offset.** auto8 never transmits on the TX offset of the station that it calls.
+- R28. **Limit the tries per station.** auto8 calls one station for a limited number of tries. Then it skips that station for a time and goes to the next task.
 
 **Rules of this repository**
 
-- R29. The `CLAUDE.md` rule "It does not change the radio, the PA or the antennas" changes to the rule of R6. The draft v1 plan decision D3 no longer applies to auto8 with this plan. Both changes are process or TX control changes, so they need the approval of the operator.
+- R29. **Change the radio rule.** The `CLAUDE.md` rule "It does not change the radio, the PA or the antennas" changes to the rule of R6. The draft v1 plan decision D3 no longer applies to auto8 with this plan. Both changes are process or TX control changes, so they need the approval of the operator.
 
 ### Key Flows
 
