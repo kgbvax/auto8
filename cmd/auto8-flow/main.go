@@ -17,7 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kgbvax/auto8/internal/flow"
+	"github.com/opsotter/auto8/internal/flow"
 )
 
 const usage = `usage: auto8-flow <command> [flags]
