@@ -10,7 +10,7 @@ The build agent is a Claude agent in GitHub Actions that a schedule starts. A bu
 
 The sync step is a tool in this repository. It keeps one GitHub issue for each requirement in the plan files. It runs by itself after each push to `main` that changes a plan file (R5).
 
-The build agent and the sync step work under their own GitHub identity. That identity has access only to `kgbvax/auto8` and its project board, and it is not a code owner (R25).
+The build agent and the sync step work under their own GitHub identity. That identity has access only to `opsotter/auto8` and its project board, and it is not a code owner (R25).
 
 GitHub runs the CI jobs. Automatic merge means that GitHub merges a pull request by itself after all required jobs pass (R17). GitHub also holds each pull request that changes TX control code or a process file, until the operator approves it (R18, R19).
 
@@ -94,7 +94,7 @@ The process files are `.github/` (with the code owner file), `.claude/` and `too
 
 If a pull request changes TX control code or a process file, GitHub does not merge it before the operator approves it. The build agent also sets the label `needs-operator` on the issues of such a pull request.
 
-Another project is every repository other than `kgbvax/auto8`, for example opsotter (with chase-queue), horstreporter and StationA. A change to a vendored copy of their code counts as a change in that project. So does a change to the MQTT topics and payloads that they read. If a requirement needs such a change, the build agent writes no code there. It describes the change in the issue and sets the label `blocked` (R20). The operator makes the change in the other project and sets `ready` again.
+Another project is every repository other than `opsotter/auto8`, for example opsotter (with chase-queue), horstreporter and StationA. A change to a vendored copy of their code counts as a change in that project. So does a change to the MQTT topics and payloads that they read. If a requirement needs such a change, the build agent writes no code there. It describes the change in the issue and sets the label `blocked` (R20). The operator makes the change in the other project and sets `ready` again.
 
 A build or a job can fail. If the build agent cannot fix the failure in the same build, it sets the label `blocked` and names the reason (R21). If the operator closes a held pull request without a merge, or asks for changes, its issues go to `blocked` (R31).
 
