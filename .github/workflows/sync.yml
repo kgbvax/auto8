@@ -1,0 +1,66 @@
+name: sync
+
+# Keeps one issue for each requirement in the plan files (R5 of the
+# requirements-workflow plan). It runs after each push to main that changes
+# a plan file, and on a manual start.
+#
+# The job runs only when the repository variable AUTO8_APP_CLIENT_ID is set,
+# because the sync step acts under the GitHub App (R25). Until the operator
+# creates the App (step O2), a push does nothing. A manual start with
+# dry_run works without the App: it reads the issues with the read-only
+# GITHUB_TOKEN and prints the planned changes.
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/plans/**']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Print the planned changes and change nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  issues: read
+
+# One sync at a time. A second run waits, so two runs never open the same
+# issue twice.
+concurrency:
+  group: auto8-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: vars.AUTO8_APP_CLIENT_ID != '' || inputs.dry_run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+
+      - name: Get an App token
+        id: app
+        if: ${{ !inputs.dry_run }}
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.AUTO8_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTO8_APP_PRIVATE_KEY }}
+
+      - name: Sync the issues
+        if: ${{ !inputs.dry_run }}
+        env:
+          AUTO8_TOKEN: ${{ steps.app.outputs.token }}
+          AUTO8_PROJECT_ID: ${{ vars.AUTO8_PROJECT_ID }}
+          AUTO8_APP_LOGIN: ${{ vars.AUTO8_APP_LOGIN }}
+        run: go run ./cmd/auto8-flow sync
+
+      - name: Print the planned changes
+        if: ${{ inputs.dry_run }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AUTO8_PROJECT_ID: ${{ vars.AUTO8_PROJECT_ID }}
+          AUTO8_APP_LOGIN: ${{ vars.AUTO8_APP_LOGIN }}
+        run: go run ./cmd/auto8-flow sync -dry-run
