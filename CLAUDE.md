@@ -37,6 +37,8 @@ The repository carries the output style in `.claude/output-styles/simple-english
 | Path | Role |
 |---|---|
 | `cmd/auto8/` | The command (a stub today) |
+| `cmd/auto8-flow/`, `internal/flow/` | The workflow tool of the development process |
+| `.github/auto8/` | The prompt of the build agent and the publish script of the build workflow |
 | `docs/SDLC.md` | The development life cycle |
 | `docs/plans/` | Requirements and plans (unified plans of the Compound Engineering plugin) |
 | `docs/ideation/` | Ideas from `ce-ideate` (no issues) |

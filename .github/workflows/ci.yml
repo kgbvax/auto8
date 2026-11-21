@@ -16,6 +16,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          # No cache: the build job can write to the Actions cache, and a
+          # changed cache entry could change the test results.
+          cache: false
       - run: go build ./...
       - run: go vet ./...
       - run: go test -race ./...
@@ -65,6 +68,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          # No cache: the build job can write to the Actions cache, and a
+          # changed cache entry could change the test results.
+          cache: false
       - name: Compare the requirements of base and head
         env:
           EVENT: ${{ github.event_name }}

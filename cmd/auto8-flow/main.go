@@ -27,6 +27,8 @@ commands:
   reap       set blocked on building issues without an open App pull request
   pick       set building on the ready issues of the next plan, print it as JSON
   mark       set blocked or needs-operator on building issues of one plan
+  apply      apply the state decisions of the build agent for the picked issues
+  prbody     build the pull request body of a build from the text of the agent
   holds      set needs-operator if an App pull request changes owned files
   reqcheck   fail if an App pull request changes the requirements
   merge      merge an App pull request when all gates pass, or block its issues
@@ -150,6 +152,54 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 			return errors.New("mark needs -plan and -ids")
 		}
 		return flow.Mark(ctx, c.client, c.app, *plan, strings.Split(*ids, ","), *state, *reason)
+	case "apply":
+		pickFile := fs.String("pick", "", "JSON file with the output of pick")
+		decFile := fs.String("decisions", "", "JSON file with the decisions of the build agent")
+		state := fs.String("state", "", "apply only the decisions with this state: blocked or needs-operator")
+		out := fs.String("out", "", "file for the pick without the blocked requirements")
+		c, err := setup(fs, rest)
+		if err != nil {
+			return err
+		}
+		if *pickFile == "" || *decFile == "" || *out == "" {
+			return errors.New("apply needs -pick, -decisions and -out")
+		}
+		p, err := readPick(*pickFile)
+		if err != nil {
+			return err
+		}
+		data, err := os.ReadFile(*decFile)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		ds, err := flow.ParseDecisions(data)
+		if err != nil {
+			return err
+		}
+		restPick, err := flow.ApplyDecisions(ctx, c.client, c.app, p, ds, *state)
+		if err != nil {
+			return err
+		}
+		return writePick(*out, restPick)
+	case "prbody":
+		pickFile := fs.String("pick", "", "JSON file with the output of pick")
+		in := fs.String("in", "", "Markdown file with the text of the agent; a missing file gives an empty text")
+		if err := fs.Parse(rest); err != nil {
+			return err
+		}
+		if *pickFile == "" || *in == "" {
+			return errors.New("prbody needs -pick and -in")
+		}
+		p, err := readPick(*pickFile)
+		if err != nil {
+			return err
+		}
+		text, err := os.ReadFile(*in)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		_, err = io.WriteString(os.Stdout, flow.PullBody(p, string(text)))
+		return err
 	case "holds":
 		pr := fs.Int("pr", 0, "number of the pull request")
 		owners := fs.String("codeowners", ".github/CODEOWNERS", "CODEOWNERS file of the base branch, relative to -root")
@@ -241,6 +291,37 @@ func run(ctx context.Context, args []string, stderr io.Writer) error {
 		fmt.Fprint(stderr, usage)
 		return fmt.Errorf("unknown command %q", cmd)
 	}
+}
+
+// readPick reads a file in the format that pick prints: {"pick": {...}}.
+func readPick(path string) (flow.Pick, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return flow.Pick{}, err
+	}
+	var w struct {
+		Pick *flow.Pick `json:"pick"`
+	}
+	if err := json.Unmarshal(data, &w); err != nil || w.Pick == nil {
+		return flow.Pick{}, fmt.Errorf("%s is not the output of pick", path)
+	}
+	if w.Pick.Plan == "" || len(w.Pick.IDs) == 0 {
+		return flow.Pick{}, fmt.Errorf("%s names no plan and no requirements", path)
+	}
+	return *w.Pick, nil
+}
+
+// writePick writes p in the format that pick prints. A pick without
+// requirements gets an empty plan, as pick prints it when it finds nothing.
+func writePick(path string, p flow.Pick) error {
+	if len(p.IDs) == 0 {
+		p = flow.Pick{}
+	}
+	data, err := json.Marshal(map[string]any{"pick": p})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, append(data, '\n'), 0o644)
 }
 
 func main() {
