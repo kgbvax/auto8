@@ -86,7 +86,9 @@ A gate is a condition that must be true before a pull request merges. GitHub enf
 3. The writing job passes. It lints each changed Markdown file with the simple-english linter (R16).
 4. The requirements job passes. A pull request of the build agent that changes the text of a requirement fails this job (R30).
 
-Automatic merge stays off until the integration job and the writing job exist (R17). Nobody changes the branch protection or the permission for automatic merge before the operator agrees.
+The workflow `.github/workflows/merge.yml` merges a pull request of the App. It runs after each run of the CI workflow and after each review. It merges a pull request only after all required jobs passed. No issue of the build can be `blocked`. Each `needs-operator` issue needs an approval of the operator on the newest commit. The requirements of the build must also match the current `main` (R29). If a required job failed, the merge step sets the issues to `blocked` and names the job.
+
+The repository variable `AUTO8_MERGE_ENABLED` turns the merge on. While it is not `true`, the merge step only sets `blocked`. The variable `AUTO8_REQUIRED_JOBS` can name the required jobs, separated by commas. Without it, the merge step also waits for the integration job. Nobody changes the branch protection or the permission for automatic merge before the operator agrees.
 
 ### 7. Holds
 
@@ -102,7 +104,7 @@ A build or a job can fail. If the build agent cannot fix the failure in the same
 
 ### 8. Close
 
-When a pull request merges, GitHub closes its issues. Each closed issue then gets one comment with a feature summary and an implementation summary (R22). The feature summary says what the operator can now do, in the words of the requirement. The implementation summary says what changed in the code and the tests. It links to the pull request and its commits.
+When a pull request of the App merges, the workflow `.github/workflows/close.yml` closes its issues. Each closed issue gets one comment with a feature summary and an implementation summary (R22). If a pull request of the App closes without a merge, its issues go to `blocked` (R31). The operator can also start the close workflow by hand with the number of a merged pull request. This repairs a missed close. The feature summary says what the operator can now do, in the words of the requirement. The implementation summary says what changed in the code and the tests. It links to the pull request and its commits.
 
 ### 9. Deploy
 
@@ -116,9 +118,9 @@ The repository carries this style in `.claude/output-styles/simple-english.md`, 
 
 ## What works today
 
-On 2026-11-21 the repository has the workflow tool `auto8-flow`, the sync workflow and the build workflow. It also has the jobs `test`, `writing` and `requirements`, the code owner file and the ruleset file. These parts do not exist yet:
+On 2026-11-21 the repository has the workflow tool `auto8-flow` and the workflows for sync, build, merge and close. It also has the jobs `test`, `writing` and `requirements`, the code owner file and the ruleset file. These parts do not exist yet:
 
-1. The label guard, the merge workflow and the close workflow.
+1. The label guard.
 2. The integration job and its test peers.
 
-The build workflow needs the App and the secret `CLAUDE_CODE_OAUTH_TOKEN` of step O2. Until the merge workflow exists, the operator merges each pull request by hand.
+The workflows need the App and the secret `CLAUDE_CODE_OAUTH_TOKEN` of step O2. Until the integration job exists, the merge step waits for it. If the operator wants merges before that, the operator sets `AUTO8_REQUIRED_JOBS` to `test,writing,requirements`.

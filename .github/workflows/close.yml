@@ -1,0 +1,70 @@
+name: close
+
+# Finishes the issues of a closed pull request (U12 of the
+# requirements-workflow plan, R22, R31, KTD9).
+#
+# A merged pull request of the App closes the issues of its build as done.
+# Each issue gets the summary block of its requirement as a comment. A
+# pull request of the App that closed without a merge sets its issues to
+# blocked.
+#
+# The manual start takes the number of a merged pull request of any
+# author. So the operator can repair a missed close, also for a pull
+# request of the operator with summary blocks.
+#
+# No job uses pull_request_target, and no job runs code of the pull
+# request. The job checks out main and builds auto8-flow from main.
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: Number of the closed pull request
+        type: number
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  AUTO8_APP_LOGIN: ${{ vars.AUTO8_APP_LOGIN || 'opsotter-auto8[bot]' }}
+
+jobs:
+  close:
+    if: >-
+      vars.AUTO8_APP_CLIENT_ID != '' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == (vars.AUTO8_APP_LOGIN || 'opsotter-auto8[bot]')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: auto8-close-${{ inputs.pr || github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          # No cache: the build job can write to the Actions cache, and this
+          # job holds the full App token.
+          cache: false
+
+      - name: Get an App token
+        id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.AUTO8_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTO8_APP_PRIVATE_KEY }}
+
+      - name: Close the issues
+        env:
+          PR: ${{ github.event_name == 'workflow_dispatch' && inputs.pr || github.event.pull_request.number }}
+          AUTO8_TOKEN: ${{ steps.app.outputs.token }}
+          AUTO8_PROJECT_ID: ${{ vars.AUTO8_PROJECT_ID }}
+        run: go run ./cmd/auto8-flow close -pr "$PR"

@@ -1,0 +1,115 @@
+name: merge
+
+# Merges a green pull request of the App (U12 of the requirements-workflow
+# plan, R17, R21, R29, R31, KTD8). It runs after each run of the CI
+# workflow and after each review.
+#
+# auto8-flow merge decides. It merges only if every required job passed,
+# no issue of the build is blocked, an approval of the operator released
+# each needs-operator issue, and the requirements of the build still match
+# the current main. A failed job, a change request of the operator or a
+# changed requirement sets the issues to blocked. The ruleset of main
+# still decides every merge.
+#
+# The repository variable AUTO8_MERGE_ENABLED turns the merge on. While it
+# is not true, the step only sets blocked. The variable AUTO8_REQUIRED_JOBS
+# can name the required jobs, separated by commas. Without it, the step
+# uses the list of auto8-flow: test, writing, requirements, integration.
+#
+# No job uses pull_request_target, and no job runs code of the pull
+# request. Each job checks out main and builds auto8-flow from main, also
+# for a review event, where GitHub starts the workflow on the merge ref of
+# the pull request.
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+  pull_request_review:
+    types: [submitted]
+
+permissions:
+  contents: read
+
+env:
+  AUTO8_APP_LOGIN: ${{ vars.AUTO8_APP_LOGIN || 'opsotter-auto8[bot]' }}
+
+jobs:
+  merge:
+    # Only pull requests of this repository: a fork gets no secrets and
+    # no run.
+    if: >-
+      vars.AUTO8_APP_CLIENT_ID != '' &&
+      ((github.event_name == 'workflow_run' &&
+        github.event.workflow_run.event == 'pull_request' &&
+        github.event.workflow_run.head_repository.full_name == github.repository) ||
+       (github.event_name == 'pull_request_review' &&
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login == (vars.AUTO8_APP_LOGIN || 'opsotter-auto8[bot]')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # One merge step at a time for each pull request, so that two events
+    # do not block or merge it twice. GitHub keeps one waiting run per
+    # group, and the waiting run reads the newest state anyway.
+    concurrency:
+      group: auto8-merge-${{ github.event.workflow_run.pull_requests[0].number || github.event.pull_request.number }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          # No cache: the build job can write to the Actions cache, and this
+          # job holds the full App token.
+          cache: false
+
+      - name: Build auto8-flow from main
+        run: go build -o "$RUNNER_TEMP/auto8-flow" ./cmd/auto8-flow
+
+      - name: Find the pull requests
+        id: prs
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" = workflow_run ]; then
+            prs=$(jq -r '[.workflow_run.pull_requests[] | select(.base.ref == "main") | .number] | unique | join(" ")' "$GITHUB_EVENT_PATH")
+          else
+            prs=$(jq -r '.pull_request.number' "$GITHUB_EVENT_PATH")
+          fi
+          echo "numbers=$prs" >> "$GITHUB_OUTPUT"
+          echo "Pull requests: ${prs:-none}"
+
+      - name: Get an App token
+        id: app
+        if: steps.prs.outputs.numbers != ''
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
+        with:
+          client-id: ${{ vars.AUTO8_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTO8_APP_PRIVATE_KEY }}
+
+      - name: Merge or block
+        if: steps.prs.outputs.numbers != ''
+        env:
+          FLOW: ${{ runner.temp }}/auto8-flow
+          PRS: ${{ steps.prs.outputs.numbers }}
+          REQUIRED: ${{ vars.AUTO8_REQUIRED_JOBS }}
+          AUTO8_TOKEN: ${{ steps.app.outputs.token }}
+          AUTO8_PROJECT_ID: ${{ vars.AUTO8_PROJECT_ID }}
+          AUTO8_MERGE_ENABLED: ${{ vars.AUTO8_MERGE_ENABLED }}
+        run: |
+          status=0
+          for pr in $PRS; do
+            # The head of the pull request is only data for the comparison
+            # of the requirements. No code of it runs.
+            git fetch -q --no-tags origin "+refs/pull/$pr/head:refs/auto8/pull/$pr"
+            args=(merge -pr "$pr" -main origin/main -head "refs/auto8/pull/$pr")
+            if [ -n "$REQUIRED" ]; then
+              args+=(-require "$REQUIRED")
+            fi
+            "$FLOW" "${args[@]}" || status=1
+          done
+          exit $status
