@@ -78,6 +78,51 @@ func TestParsePlanReadsOnlyTheRequirementsSection(t *testing.T) {
 	}
 }
 
+func TestParsePlanReadsNames(t *testing.T) {
+	plan := strings.Replace(unifiedPlan, "- R1. The first requirement.\n",
+		"- R1. **Jump to a spot.** When chase-queue shows a spot, jump.\n"+
+			"- R4. **Bold but no period** stays text.\n"+
+			"- R5. **Two lines.** The text starts here\n  and goes on here.\n", 1)
+	p, reports, ok := ParsePlan("docs/plans/example.md", []byte(plan))
+	if !ok || len(reports) != 0 {
+		t.Fatalf("ok = %v, reports = %v", ok, reports)
+	}
+	want := map[string][2]string{
+		"R1": {"Jump to a spot", "When chase-queue shows a spot, jump."},
+		"R2": {"", "The second requirement continues on an indented line."},
+		"R4": {"", "**Bold but no period** stays text."},
+		"R5": {"Two lines", "The text starts here and goes on here."},
+	}
+	for _, r := range p.Requirements {
+		w, ok := want[r.ID]
+		if !ok {
+			continue
+		}
+		if r.Name != w[0] || r.Text != w[1] {
+			t.Fatalf("%s: name %q, text %q, want %q, %q", r.ID, r.Name, r.Text, w[0], w[1])
+		}
+		if r.Hash != HashText(w[1]) {
+			t.Fatalf("%s: the hash must cover only the text after the name", r.ID)
+		}
+	}
+}
+
+func TestHashIgnoresTheName(t *testing.T) {
+	parse := func(line string) Requirement {
+		p, _, _ := ParsePlan("docs/plans/example.md", []byte(strings.Replace(unifiedPlan, "- R1. The first requirement.", line, 1)))
+		return p.Requirements[0]
+	}
+	plain := parse("- R1. The first requirement.")
+	named := parse("- R1. **A name.** The first requirement.")
+	renamed := parse("- R1. **Another name.** The first requirement.")
+	if plain.Hash != named.Hash || named.Hash != renamed.Hash {
+		t.Fatalf("hashes differ: %s %s %s", plain.Hash, named.Hash, renamed.Hash)
+	}
+	if named.Name != "A name" || renamed.Name != "Another name" {
+		t.Fatalf("names = %q, %q", named.Name, renamed.Name)
+	}
+}
+
 func TestParsePlanSkipsFilesWithoutTheUnifiedContract(t *testing.T) {
 	draft := "---\ntitle: Draft\nstatus: draft\n---\n\n# Draft\n\n### Requirements\n\n- R1. Something.\n"
 	if _, _, ok := ParsePlan("docs/plans/draft.md", []byte(draft)); ok {

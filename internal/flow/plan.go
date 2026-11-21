@@ -28,8 +28,9 @@ type Requirement struct {
 	Plan  string // path of the plan file, relative to the repository root
 	Topic string // topic from the plan frontmatter
 	ID    string // for example R3
-	Text  string // the requirement text with white space normalized
-	Hash  string // HashText(Text)
+	Name  string // the short bold name without its final period, or empty
+	Text  string // the requirement text after the name, with white space normalized
+	Hash  string // HashText(Text). The hash does not cover the name.
 }
 
 // Plan is one plan file with its requirements, in file order.
@@ -46,6 +47,25 @@ var reqLine = regexp.MustCompile(`^- (R[0-9]+)\. (.*)$`)
 func HashText(text string) string {
 	sum := sha256.Sum256([]byte(strings.Join(strings.Fields(text), " ")))
 	return hex.EncodeToString(sum[:])[:12]
+}
+
+// splitName reads the short bold name at the start of a requirement text,
+// in the form "**Name.** Text". The bold span must end with a period.
+// Otherwise the name is empty and the text stays as it is.
+func splitName(text string) (name, rest string) {
+	if !strings.HasPrefix(text, "**") {
+		return "", text
+	}
+	end := strings.Index(text[2:], "**")
+	if end < 0 {
+		return "", text
+	}
+	bold := text[2 : 2+end]
+	n := strings.TrimSpace(strings.TrimSuffix(bold, "."))
+	if !strings.HasSuffix(bold, ".") || n == "" {
+		return "", text
+	}
+	return n, strings.TrimSpace(text[2+end+2:])
 }
 
 // frontmatter returns the key-value pairs between the first two "---" lines.
@@ -90,7 +110,7 @@ func ParsePlan(p string, data []byte) (Plan, []string, bool) {
 		if cur == nil {
 			return
 		}
-		cur.Text = strings.Join(strings.Fields(cur.Text), " ")
+		cur.Name, cur.Text = splitName(strings.Join(strings.Fields(cur.Text), " "))
 		cur.Hash = HashText(cur.Text)
 		if seen[cur.ID] {
 			reports = append(reports, fmt.Sprintf("%s: the ID %s is used more than once", p, cur.ID))
