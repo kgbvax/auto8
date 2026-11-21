@@ -64,14 +64,16 @@ If the text of a `ready` or `blocked` requirement changes later, the sync step s
 
 ### 5. Build
 
-The schedule starts the build agent a few times a day. At most one build runs at a time (R10). The build agent does these steps:
+The workflow `.github/workflows/build.yml` starts a build every four hours. The schedule acts only while the repository variable `AUTO8_BUILD_ENABLED` is `true`. The operator can also start the workflow by hand in the Actions tab. A manual start always runs. A manual start with `dry_run` shows the plan that the next build takes, and it changes nothing. GitHub turns off the schedule of a public repository after 60 days without activity. If that happens, the operator turns the schedule on again in the Actions tab. At most one build runs at a time (R10). The build agent does these steps:
 
 1. It takes the oldest issue with the label `ready`.
 2. It collects all ready requirements of the same plan into one build. It sets the label `building` on their issues.
 3. It reads the requirement text from the plan file on `main`, never from the issue (R12).
 4. It plans and codes the change with `ce-plan` and `ce-work`. It does not change the text of any requirement (R13).
 5. It runs `ce-code-review` and the simple-english linter, and fixes what they find (R14).
-6. It opens a pull request that names the issues it closes.
+6. It opens a pull request that names its issues. The close step closes the issues after the merge and writes the summaries.
+
+The workflow runs the build in three jobs on separate runners. The first job takes the plan and sets `building`. The second job runs the build agent with a token that can only read, and the App key never comes to its runner. The agent writes its commits, the pull request text and its state decisions into files. The third job runs without Claude and checks these files. It accepts only the states `blocked` and `needs-operator`, and only for the picked issues. Then it pushes the branch and opens the pull request.
 
 If a build stops without a result, the next run sets the label `blocked` on its issues and names that reason (R11). While a plan has an open pull request of the build agent, no build takes that plan again (R32). If a requirement text changes during a build, the pull request does not merge, and the issue goes to `blocked` (R29).
 
@@ -114,10 +116,9 @@ The repository carries this style in `.claude/output-styles/simple-english.md`, 
 
 ## What works today
 
-On 2026-11-20 these parts exist: the repository, the job `test`, this document, the plan for the process, and the writing rule with its style, skill and linter. These parts do not exist yet:
+On 2026-11-21 the repository has the workflow tool `auto8-flow`, the sync workflow and the build workflow. It also has the jobs `test`, `writing` and `requirements`, the code owner file and the ruleset file. These parts do not exist yet:
 
-1. The sync step, the labels and the project board.
-2. The GitHub identity of the agents, the code owner file and the branch protection.
-3. The integration job, the writing job, the schedule and the automatic merge.
+1. The label guard, the merge workflow and the close workflow.
+2. The integration job and its test peers.
 
-Until they exist, the operator starts each build by hand and merges each pull request by hand.
+The build workflow needs the App and the secret `CLAUDE_CODE_OAUTH_TOKEN` of step O2. Until the merge workflow exists, the operator merges each pull request by hand.

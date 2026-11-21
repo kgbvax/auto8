@@ -40,6 +40,9 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
+          # No cache: the build job can write to the Actions cache, and this
+          # job holds the full App token.
+          cache: false
 
       - name: Get an App token
         id: app
